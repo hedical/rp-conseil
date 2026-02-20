@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LineChart, Line } from 'recharts';
-import { TrendingUp, Users, FileText, Award, Filter, Clock, Calendar } from 'lucide-react';
+import { TrendingUp, Users, FileText, Award, Filter, Clock, Calendar, AlertCircle } from 'lucide-react';
 
 const Analysis: React.FC = () => {
     const { sales, clients, loading, error } = useData();
@@ -16,9 +16,16 @@ const Analysis: React.FC = () => {
     // Filter sales by selected year
     const filteredSales = selectedYear === 'all' ? sales : sales.filter(sale => sale.annee === parseInt(selectedYear));
 
-    const parseCurrency = (str: string) => {
-        if (!str) return 0;
-        return parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.'));
+    const parseCurrency = (val: any): number => {
+        if (val === undefined || val === null || val === 'SO' || val === '') return 0;
+        if (typeof val === 'number') return isNaN(val) ? 0 : val;
+        try {
+            const str = String(val).replace(/\s/g, '').replace(/[^0-9,.-]+/g, '').replace(',', '.');
+            const parsed = parseFloat(str);
+            return isNaN(parsed) ? 0 : parsed;
+        } catch {
+            return 0;
+        }
     };
 
     // Helper: Parse date "DD/MM/YYYY" or "YYYY"
@@ -113,6 +120,26 @@ const Analysis: React.FC = () => {
         Fiche: timelineData[year].fiche,
         Parrainage: timelineData[year].parrainage
     })).sort((a, b) => parseInt(a.name) - parseInt(b.name));
+
+    // 6. Évolution du taux d'annulation
+    const cancellationTrendData = React.useMemo(() => {
+        const yearGroups: Record<number, { total: number; cancelled: number }> = {};
+
+        // Use all sales to see progression even if a year is filtered out from view
+        sales.forEach(s => {
+            const year = s.annee;
+            if (!yearGroups[year]) yearGroups[year] = { total: 0, cancelled: 0 };
+            yearGroups[year].total++;
+            if ((s.statut || '').toLowerCase().includes('annul')) {
+                yearGroups[year].cancelled++;
+            }
+        });
+
+        return Object.entries(yearGroups).map(([year, data]) => ({
+            name: year,
+            rate: data.total > 0 ? parseFloat(((data.cancelled / data.total) * 100).toFixed(2)) : 0
+        })).sort((a, b) => parseInt(a.name) - parseInt(b.name));
+    }, [sales]);
 
     // --- Advanced Analytics Calculations ---
 
@@ -431,6 +458,45 @@ const Analysis: React.FC = () => {
                             </Pie>
                             <Tooltip />
                         </PieChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            {/* Row 2.5: Cancellation Trend */}
+            <div className="bg-white border border-zinc-200 rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-zinc-100">
+                    <AlertCircle className="text-zinc-400" size={20} />
+                    <h3 className="text-lg font-semibold text-zinc-900">Évolution du Taux d'Annulation (%)</h3>
+                </div>
+                <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={cancellationTrendData}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                            <XAxis
+                                dataKey="name"
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fill: '#71717a', fontSize: 12 }}
+                            />
+                            <YAxis
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fill: '#71717a', fontSize: 12 }}
+                                unit="%"
+                            />
+                            <Tooltip
+                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                formatter={(value: any) => [`${value}%`, 'Taux d\'annulation']}
+                            />
+                            <Line
+                                type="monotone"
+                                dataKey="rate"
+                                stroke="#18181b"
+                                strokeWidth={3}
+                                dot={{ r: 6, fill: '#18181b', strokeWidth: 2, stroke: '#fff' }}
+                                activeDot={{ r: 8, strokeWidth: 0 }}
+                            />
+                        </LineChart>
                     </ResponsiveContainer>
                 </div>
             </div>

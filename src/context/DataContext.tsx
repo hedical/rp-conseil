@@ -64,10 +64,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const client = clientMap.get(name)!;
             client.sales.push(sale);
 
-            // Parse "CA général" string to number (e.g. "22 230 €" -> 22230)
-            const parseCurrency = (str: string) => {
-                if (!str) return 0;
-                return parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.'));
+            // Parse currency string to number robustly
+            const parseCurrency = (val: any): number => {
+                if (val === undefined || val === null || val === 'SO' || val === '') return 0;
+                if (typeof val === 'number') return isNaN(val) ? 0 : val;
+                try {
+                    const str = String(val).replace(/\s/g, '').replace(/[^0-9,.-]+/g, '').replace(',', '.');
+                    const parsed = parseFloat(str);
+                    return isNaN(parsed) ? 0 : parsed;
+                } catch {
+                    return 0;
+                }
             };
 
             // Only add to Total CA if status does NOT contain 'Annulé' (case insensitive)

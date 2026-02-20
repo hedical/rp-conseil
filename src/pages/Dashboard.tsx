@@ -2,6 +2,7 @@ import React from 'react';
 import { useData } from '../context/DataContext';
 import StatCard from '../components/dashboard/StatCard';
 import ActivityChart from '../components/dashboard/ActivityChart';
+import BillingTracking from '../components/dashboard/dashboard/BillingTracking';
 import { BadgeEuro, Users, TrendingUp, AlertCircle } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
@@ -14,22 +15,45 @@ const Dashboard: React.FC = () => {
     const totalSalesCount = sales.length;
     const totalClientsCount = clients.length;
 
-    const parseCurrency = (str: string) => {
-        if (!str) return 0;
-        return parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.'));
+    const parseCurrency = (val: any): number => {
+        if (val === undefined || val === null || val === 'SO' || val === '') return 0;
+        if (typeof val === 'number') return isNaN(val) ? 0 : val;
+        try {
+            const str = String(val).replace(/\s/g, '').replace(/[^0-9,.-]+/g, '').replace(',', '.');
+            const parsed = parseFloat(str);
+            return isNaN(parsed) ? 0 : parsed;
+        } catch {
+            return 0;
+        }
     };
 
-    const totalCAGeneral = sales.reduce((acc, sale) => acc + parseCurrency(sale.caGeneral), 0);
-    const totalCAPerso = sales.reduce((acc, sale) => acc + parseCurrency(sale.caPerso), 0);
+    const totalCAGeneral = sales.reduce((acc, sale) => {
+        const status = (sale.statut || '').toLowerCase();
+        if (status.includes('annul')) return acc;
+        return acc + parseCurrency(sale.caGeneral) + parseCurrency(sale.fIngenierie);
+    }, 0);
+
+    const totalCAPerso = sales.reduce((acc, sale) => {
+        const status = (sale.statut || '').toLowerCase();
+        if (status.includes('annul')) return acc;
+        return acc + parseCurrency(sale.caPerso) + parseCurrency(sale.fIngenierieRPC);
+    }, 0);
+
+    const caPersoPercentage = totalCAGeneral > 0
+        ? ((totalCAPerso / totalCAGeneral) * 100).toFixed(2) + '%'
+        : '0%';
 
     // Prepare chart data with CA Général and CA Perso breakdown
     const salesByYear = sales.reduce((acc: any, sale) => {
         const year = sale.annee;
+        const status = (sale.statut || '').toLowerCase();
+        if (status.includes('annul')) return acc; // Only show non-cancelled in the chart to match cards
+
         if (!acc[year]) {
             acc[year] = { caGeneral: 0, caPerso: 0 };
         }
-        acc[year].caGeneral += parseCurrency(sale.caGeneral);
-        acc[year].caPerso += parseCurrency(sale.caPerso);
+        acc[year].caGeneral += parseCurrency(sale.caGeneral) + parseCurrency(sale.fIngenierie);
+        acc[year].caPerso += parseCurrency(sale.caPerso) + parseCurrency(sale.fIngenierieRPC);
         return acc;
     }, {});
 
@@ -46,12 +70,11 @@ const Dashboard: React.FC = () => {
                     title="CA Général Total"
                     value={`${totalCAGeneral.toLocaleString('fr-FR')} €`}
                     icon={BadgeEuro}
-                    trend="+12%"
-                    trendUp={true}
                 />
                 <StatCard
                     title="CA Perso Total"
                     value={`${totalCAPerso.toLocaleString('fr-FR')} €`}
+                    subtitle={`${caPersoPercentage} du CA Général`}
                     icon={TrendingUp}
                 />
                 <StatCard
@@ -88,6 +111,8 @@ const Dashboard: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            <BillingTracking />
         </div>
     );
 };
