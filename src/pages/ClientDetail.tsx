@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { updateSaleData, deleteSaleData } from '../services/api';
-import { ArrowLeft, Edit, Save, FileText, CheckCircle, Trash2, Plus } from 'lucide-react';
+import { ArrowLeft, Edit, Save, FileText, CheckCircle, Trash2, Plus, Calculator } from 'lucide-react';
 import AddClientModal from '../components/AddClientModal';
 
 const ClientDetail: React.FC = () => {
@@ -137,6 +137,15 @@ const ClientDetail: React.FC = () => {
                     </div>
 
                     <div className="flex gap-2 flex-wrap">
+                        <button
+                            disabled
+                            className="flex items-center gap-2 px-4 py-2 bg-white text-zinc-400 rounded-lg border border-zinc-200 cursor-not-allowed text-sm font-medium relative group"
+                        >
+                            <Calculator size={16} />
+                            Simulation financière
+                            <span className="absolute -top-2 -right-2 bg-zinc-100 text-zinc-500 text-[10px] px-1.5 py-0.5 rounded border border-zinc-200 font-bold">À VENIR</span>
+                        </button>
+
                         <button
                             onClick={() => setIsAddProductModalOpen(true)}
                             className="flex items-center gap-2 px-4 py-2 bg-zinc-100 text-zinc-900 rounded-lg hover:bg-zinc-200 transition-colors text-sm font-medium"

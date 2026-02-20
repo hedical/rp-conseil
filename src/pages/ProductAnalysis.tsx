@@ -9,6 +9,33 @@ import { ArrowLeft, Package, TrendingUp, Clock, Users, Calendar } from 'lucide-r
 
 const COLORS = ['#18181b', '#52525b', '#71717a', '#a1a1aa', '#d4d4d8'];
 
+const PRODUCT_DESCRIPTIONS: Record<string, string> = {
+    // Immobilier & Défiscalisation
+    'PINEL': 'Investissement locatif dans le neuf offrant une réduction d\'impôt en échange d\'un engagement de location (6, 9 ou 12 ans) à loyers plafonnés.',
+    'LMNP CB': 'Investissement en résidence de services neuve. Permet de récupérer la TVA (20 %) et de bénéficier d\'une réduction d\'impôt (dispositif en extinction, mais encore présent en suivi de portefeuille).',
+    'MALRAUX': 'Défiscalisation lourde via la restauration complète d\'immeubles situés dans des secteurs sauvegardés. Idéal pour les très fortes impositions.',
+    'LMNP AM': 'Le régime "classique" du Loueur en Meublé Non Professionnel. Permet de percevoir des revenus locatifs quasi non fiscalisés grâce à l\'amortissement comptable du bien.',
+    'GIRARDIN': 'Produit "One-Shot" de pure défiscalisation en Outre-mer. Le client investit à fonds perdus pour obtenir une réduction d\'impôt supérieure à sa mise l\'année suivante.',
+    'SCPI': 'Sociétés Civiles de Placement Immobilier. Permet d\'investir dans l\'immobilier professionnel ou résidentiel dès quelques milliers d\'euros, sans souci de gestion.',
+
+    // Solutions Financières & Retraite
+    'Assurance vie': 'Le "couteau suisse" de l\'épargne. Fiscalité avantageuse sur les gains après 8 ans et outil hors pair de transmission successorale.',
+    'PER': 'Produit de tunnel pour la retraite. Les versements sont déductibles du revenu imposable (selon la TMI), avec une sortie en capital ou rente au dénouement.',
+    'Crowdfunding': 'Financement participatif, souvent de promotion immobilière. Rendements élevés (souvent 8-10 %) sur des durées courtes (12-36 mois), mais avec un risque de perte en capital.',
+    'AV - VM': 'Offres en Versements Mensuels (ou Programmés). Stratégie de lissage du risque de marché par des entrées régulières sur l\'Assurance Vie.',
+    'PER - VM': 'Offres en Versements Mensuels (ou Programmés). Stratégie de lissage du risque de marché par des entrées régulières sur le PER.',
+
+    // Services & Accompagnement
+    'RP': 'Conseil et intermédiation pour l\'achat de la résidence principale du client.',
+    'Vente ancien': 'Activité de transaction immobilière classique sur le marché de la revente.',
+    'Gestion locative': 'Service de gestion déléguée des biens des clients (recherche de locataire, perception des loyers, travaux).',
+    'Amarris': 'Partenaire comptable spécialisé (souvent utilisé pour les déclarations LMNP) pour sécuriser la fiscalité des investisseurs.',
+    'Courtage': 'Recherche du meilleur financement bancaire pour les projets des clients.',
+    'Délégation assurance': 'Mise en place d\'une assurance emprunteur externe à la banque pour réduire le coût total du crédit.',
+    'Déclaration impôts': "Prestation d'assistance pour aider le client à remplir ses obligations fiscales annuelles (souvent un outil de fidélisation).",
+    'Arbitrage': "Modification de la répartition des actifs au sein d'un contrat financier (Assurance Vie/PER) pour sécuriser des gains ou dynamiser le portefeuille."
+};
+
 const ProductAnalysis: React.FC = () => {
     const { productName } = useParams<{ productName: string }>();
     const navigate = useNavigate();
@@ -29,9 +56,16 @@ const ProductAnalysis: React.FC = () => {
         return Math.ceil(diff / (1000 * 60 * 60 * 24));
     };
 
-    const parseCurrency = (str: string) => {
-        if (!str) return 0;
-        return parseFloat(str.replace(/[^0-9,-]+/g, '').replace(',', '.')) || 0;
+    const parseCurrency = (val: any): number => {
+        if (val === undefined || val === null || val === 'SO' || val === '') return 0;
+        if (typeof val === 'number') return isNaN(val) ? 0 : val;
+        try {
+            const str = String(val).replace(/\s/g, '').replace(/[^0-9,.-]+/g, '').replace(',', '.');
+            const parsed = parseFloat(str);
+            return isNaN(parsed) ? 0 : parsed;
+        } catch {
+            return 0;
+        }
     };
 
     // All hooks must run before any conditional returns
@@ -120,11 +154,18 @@ const ProductAnalysis: React.FC = () => {
                     <ArrowLeft size={16} />
                     Retour aux Analyses
                 </button>
-                <div className="flex items-center gap-3">
-                    <Package className="text-zinc-400" size={24} />
+                <div className="flex items-start gap-4">
+                    <div className="p-3 bg-zinc-50 rounded-lg">
+                        <Package className="text-zinc-900" size={24} />
+                    </div>
                     <div>
                         <h2 className="text-2xl font-bold text-zinc-900">{productName}</h2>
-                        <p className="text-zinc-500">Analyse détaillée du produit</p>
+                        <p className="text-zinc-500 mt-1 max-w-3xl leading-relaxed">
+                            {productName && PRODUCT_DESCRIPTIONS[productName]
+                                ? PRODUCT_DESCRIPTIONS[productName]
+                                : "Analyse détaillée des performances et de l'évolution de ce produit au sein du portefeuille."
+                            }
+                        </p>
                     </div>
                 </div>
 
