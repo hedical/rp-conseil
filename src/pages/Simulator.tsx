@@ -13,34 +13,48 @@ const parseCurrency = (str: string) => {
 const Simulator: React.FC = () => {
     const { sales, loading, error } = useData();
 
-    // --- Compute base stats from the last full year of data ---
+    // --- Compute available years ---
+    const availableYears = useMemo(() => {
+        if (!sales) return [];
+        const years = Array.from(new Set(sales.map(s => s.annee).filter(Boolean)));
+        return years.sort((a, b) => b - a);
+    }, [sales]);
+
+    const [selectedYear, setSelectedYear] = useState<number | undefined>(undefined);
+
+    // Set initial selected year once data is loaded
+    React.useEffect(() => {
+        if (availableYears.length > 0 && selectedYear === undefined) {
+            setSelectedYear(availableYears[0]);
+        }
+    }, [availableYears, selectedYear]);
+
+    // --- Compute base stats from the selected year of data ---
     const baseStats = useMemo(() => {
-        if (!sales || sales.length === 0) return null;
-        const years = sales.map(s => s.annee).filter(Boolean);
-        const maxYear = Math.max(...years);
-        const lastYearSales = sales.filter(s => s.annee === maxYear && s.annulationBoolean !== 'X');
+        if (!sales || sales.length === 0 || selectedYear === undefined) return null;
+        const lastYearSales = sales.filter(s => s.annee === selectedYear && s.annulationBoolean !== 'X');
         const nbSales = lastYearSales.length;
         const totalCAPerso = lastYearSales.reduce((sum, s) => sum + parseCurrency(s.caPerso), 0);
         const totalCAGeneral = lastYearSales.reduce((sum, s) => sum + parseCurrency(s.caGeneral), 0);
         const avgCAPerso = nbSales > 0 ? totalCAPerso / nbSales : 0;
         const avgCAGeneral = nbSales > 0 ? totalCAGeneral / nbSales : 0;
         const fichePct = nbSales > 0 ? (lastYearSales.filter(s => s.type === 'F').length / nbSales) * 100 : 50;
-        return { maxYear, nbSales, totalCAPerso, totalCAGeneral, avgCAPerso, avgCAGeneral, fichePct };
-    }, [sales]);
+        return { year: selectedYear, nbSales, totalCAPerso, totalCAGeneral, avgCAPerso, avgCAGeneral, fichePct };
+    }, [sales, selectedYear]);
 
     // --- Simulator controls ---
-    const [nbVentes, setNbVentes] = useState<number>(baseStats?.nbSales ?? 30);
-    const [fichePct, setFichePct] = useState<number>(Math.round(baseStats?.fichePct ?? 50));
-    const [avgCAPersoOverride, setAvgCAPersoOverride] = useState<number>(Math.round(baseStats?.avgCAPerso ?? 5000));
-    const [avgCAGeneralOverride, setAvgCAGeneralOverride] = useState<number>(Math.round(baseStats?.avgCAGeneral ?? 15000));
+    const [nbVentes, setNbVentes] = useState<number>(30);
+    const [fichePct, setFichePct] = useState<number>(50);
+    const [avgCAPersoOverride, setAvgCAPersoOverride] = useState<number>(5000);
+    const [avgCAGeneralOverride, setAvgCAGeneralOverride] = useState<number>(15000);
 
-    // Update defaults when stats load
+    // Update defaults when stats load OR when reference year changes
     React.useEffect(() => {
         if (baseStats) {
-            setNbVentes(baseStats.nbSales);
+            setNbVentes(baseStats.nbSales || 1);
             setFichePct(Math.round(baseStats.fichePct));
-            setAvgCAPersoOverride(Math.round(baseStats.avgCAPerso));
-            setAvgCAGeneralOverride(Math.round(baseStats.avgCAGeneral));
+            setAvgCAPersoOverride(Math.round(baseStats.avgCAPerso) || 1000);
+            setAvgCAGeneralOverride(Math.round(baseStats.avgCAGeneral) || 1000);
         }
     }, [baseStats]);
 
@@ -58,12 +72,12 @@ const Simulator: React.FC = () => {
         if (!baseStats) return [];
         return [
             {
-                name: `${baseStats.maxYear} (réel)`,
+                name: `${baseStats.year} (réel)`,
                 CAPerso: Math.round(baseStats.totalCAPerso),
                 CAGeneral: Math.round(baseStats.totalCAGeneral),
             },
             {
-                name: `${baseStats.maxYear + 1} (prévu)`,
+                name: `${baseStats.year + 1} (prévu)`,
                 CAPerso: Math.round(projected.totalCAPerso),
                 CAGeneral: Math.round(projected.totalCAGeneral),
             },
@@ -90,15 +104,30 @@ const Simulator: React.FC = () => {
         <div className="space-y-8">
             {/* Header */}
             <div className="bg-white p-6 rounded-lg border border-zinc-200">
-                <div className="flex items-center gap-3 mb-1">
-                    <Calculator className="text-zinc-400" size={24} />
-                    <h2 className="text-2xl font-bold text-zinc-900">Simulateur N+1</h2>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <Calculator className="text-zinc-400" size={24} />
+                        <h2 className="text-2xl font-bold text-zinc-900">Simulateur N+1</h2>
+                    </div>
+
+                    <div className="flex items-center gap-3 bg-zinc-50 p-2 rounded-lg border border-zinc-100">
+                        <label className="text-sm font-medium text-zinc-500 whitespace-nowrap">Année de référence :</label>
+                        <select
+                            value={selectedYear}
+                            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                            className="bg-white border border-zinc-200 px-3 py-1.5 rounded-md text-sm font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                        >
+                            {availableYears.map(y => (
+                                <option key={y} value={y}>{y}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
-                <p className="text-zinc-500 text-sm ml-9">
+                <p className="text-zinc-500 text-sm mt-2">
                     Ajustez les paramètres pour obtenir une projection du CA prévisionnel.
                     {baseStats && (
                         <span className="ml-2 text-zinc-400 italic">
-                            Données de référence : {baseStats.maxYear} ({baseStats.nbSales} ventes réelles)
+                            ({baseStats.nbSales} ventes réelles trouvées)
                         </span>
                     )}
                 </p>
@@ -131,7 +160,7 @@ const Simulator: React.FC = () => {
                         </div>
                         {baseStats && (
                             <p className="text-xs text-zinc-400 mt-1 flex items-center gap-1">
-                                <Info size={11} /> Réel {baseStats.maxYear} : {baseStats.nbSales} ventes
+                                <Info size={11} /> Réel {baseStats.year} : {baseStats.nbSales} ventes
                             </p>
                         )}
                     </div>
@@ -179,7 +208,7 @@ const Simulator: React.FC = () => {
                         </div>
                         {baseStats && (
                             <p className="text-xs text-zinc-400 mt-1 flex items-center gap-1">
-                                <Info size={11} /> Réel {baseStats.maxYear} : {Math.round(baseStats.avgCAPerso).toLocaleString('fr-FR')} €/vente
+                                <Info size={11} /> Réel {baseStats.year} : {Math.round(baseStats.avgCAPerso).toLocaleString('fr-FR')} €/vente
                             </p>
                         )}
                     </div>
@@ -204,7 +233,7 @@ const Simulator: React.FC = () => {
                         </div>
                         {baseStats && (
                             <p className="text-xs text-zinc-400 mt-1 flex items-center gap-1">
-                                <Info size={11} /> Réel {baseStats.maxYear} : {Math.round(baseStats.avgCAGeneral).toLocaleString('fr-FR')} €/vente
+                                <Info size={11} /> Réel {baseStats.year} : {Math.round(baseStats.avgCAGeneral).toLocaleString('fr-FR')} €/vente
                             </p>
                         )}
                     </div>
@@ -218,14 +247,14 @@ const Simulator: React.FC = () => {
                             <p className="text-xs text-zinc-400 mb-1">CA Perso Prévisionnel</p>
                             <p className="text-3xl font-bold text-zinc-900">{projected.totalCAPerso.toLocaleString('fr-FR')} €</p>
                             <p className={`text-sm mt-2 font-medium ${growthCAPerso >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                                {growthCAPerso >= 0 ? '▲' : '▼'} {Math.abs(growthCAPerso).toFixed(1)}% vs {baseStats?.maxYear}
+                                {growthCAPerso >= 0 ? '▲' : '▼'} {Math.abs(growthCAPerso).toFixed(1)}% vs {baseStats?.year}
                             </p>
                         </div>
                         <div className="bg-white border border-zinc-200 rounded-lg p-6">
                             <p className="text-xs text-zinc-400 mb-1">Commission EPSILUM Prévisionnelle</p>
                             <p className="text-3xl font-bold text-zinc-900">{projected.totalCAGeneral.toLocaleString('fr-FR')} €</p>
                             <p className={`text-sm mt-2 font-medium ${growthCAGeneral >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                                {growthCAGeneral >= 0 ? '▲' : '▼'} {Math.abs(growthCAGeneral).toFixed(1)}% vs {baseStats?.maxYear}
+                                {growthCAGeneral >= 0 ? '▲' : '▼'} {Math.abs(growthCAGeneral).toFixed(1)}% vs {baseStats?.year}
                             </p>
                         </div>
                         <div className="bg-white border border-zinc-100 rounded-lg p-5 border">
