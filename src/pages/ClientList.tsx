@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useData } from '../context/DataContext';
 import { Link } from 'react-router-dom';
-import { Search, ChevronRight, Plus, Upload, Calculator } from 'lucide-react';
+import { Search, ChevronRight, Plus, Upload } from 'lucide-react';
 import AddClientModal from '../components/AddClientModal';
 
 const ClientList: React.FC = () => {
@@ -36,15 +36,6 @@ const ClientList: React.FC = () => {
                     </button>
 
                     <button
-                        disabled
-                        className="flex items-center gap-2 bg-white text-zinc-400 px-4 py-2.5 rounded-lg font-medium text-sm border border-zinc-200 cursor-not-allowed group relative"
-                    >
-                        <Calculator size={18} />
-                        Simulation financière
-                        <span className="absolute -top-2 -right-2 bg-zinc-100 text-zinc-500 text-[10px] px-1.5 py-0.5 rounded border border-zinc-200 font-bold">À VENIR</span>
-                    </button>
-
-                    <button
                         onClick={() => setIsAddModalOpen(true)}
                         className="flex items-center gap-2 bg-zinc-900 text-white px-5 py-2.5 rounded-lg font-semibold text-sm hover:bg-zinc-800 transition-all shadow-md hover:shadow-lg"
                     >
@@ -57,7 +48,7 @@ const ClientList: React.FC = () => {
                         <input
                             type="text"
                             placeholder="Rechercher..."
-                            className="pl-10 pr-4 py-2.5 rounded-lg border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 bg-zinc-50 w-48 transition-all text-sm"
+                            className="pl-10 pr-4 py-2.5 rounded-lg border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-zinc-900 bg-zinc-50 w-64 transition-all text-sm"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
