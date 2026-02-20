@@ -1,12 +1,13 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, Settings, PieChart, Calculator } from 'lucide-react';
+import { LayoutDashboard, Users, Settings, PieChart, Calculator, Megaphone } from 'lucide-react';
 
 const Sidebar: React.FC = () => {
     const navItems = [
         { icon: LayoutDashboard, label: 'Tableau de bord', path: '/' },
         { icon: Users, label: 'Clients', path: '/clients' },
         { icon: PieChart, label: 'Analyses', path: '/analysis' },
+        { icon: Megaphone, label: 'Campagnes', path: '/campaigns' },
         { icon: Calculator, label: 'Simulateur N+1', path: '/simulator' },
         { icon: Settings, label: 'Paramètres', path: '/settings' },
     ];
