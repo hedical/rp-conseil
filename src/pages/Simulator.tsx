@@ -10,6 +10,16 @@ const parseCurrency = (str: string) => {
     return parseFloat(str.replace(/[^0-9,-]+/g, '').replace(',', '.')) || 0;
 };
 
+const parseDate = (dateStr: string): Date | null => {
+    if (!dateStr) return null;
+    if (dateStr.match(/^\d{4}$/)) return new Date(parseInt(dateStr), 0, 1);
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+        return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+    }
+    return null;
+};
+
 const Simulator: React.FC = () => {
     const { sales, loading, error } = useData();
 
@@ -84,15 +94,39 @@ const Simulator: React.FC = () => {
         ];
     }, [baseStats, projected]);
 
+    // --- Compute seasonality weights based on ALL historical data ---
+    const seasonalWeights = useMemo(() => {
+        if (!sales || sales.length === 0) return Array(12).fill(1 / 12);
+
+        const monthlyCounts = Array(12).fill(0);
+        let totalValide = 0;
+
+        sales.forEach(s => {
+            if (s.annulationBoolean === 'X') return;
+            const date = parseDate(s.dateVente);
+            if (date) {
+                monthlyCounts[date.getMonth()]++;
+                totalValide++;
+            }
+        });
+
+        if (totalValide === 0) return Array(12).fill(1 / 12);
+        return monthlyCounts.map(count => count / totalValide);
+    }, [sales]);
+
     // --- Monthly breakdown chart ---
     const monthlyBreakdown = useMemo(() => {
         const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
-        const ventesPerMonth = nbVentes / 12;
-        return monthNames.map(name => ({
-            name,
-            ca: Math.round(ventesPerMonth * avgCAPersoOverride),
-        }));
-    }, [nbVentes, avgCAPersoOverride]);
+
+        return monthNames.map((name, index) => {
+            const weight = seasonalWeights[index];
+            const monthVentes = nbVentes * weight;
+            return {
+                name,
+                ca: Math.round(monthVentes * avgCAPersoOverride),
+            };
+        });
+    }, [nbVentes, avgCAPersoOverride, seasonalWeights]);
 
     if (loading) return <div className="p-10 text-center text-zinc-500">Chargement des données...</div>;
     if (error) return <div className="p-10 text-center text-red-500">Erreur: {error}</div>;
@@ -308,7 +342,7 @@ const Simulator: React.FC = () => {
                         <div className="flex items-center gap-3 mb-6 pb-4 border-b border-zinc-100">
                             <Calculator className="text-zinc-400" size={20} />
                             <h3 className="text-base font-semibold text-zinc-900">CA Perso Mensuel Estimé</h3>
-                            <span className="text-xs text-zinc-400 ml-auto italic">Hypothèse : répartition uniforme</span>
+                            <span className="text-xs text-zinc-400 ml-auto italic">Basé sur l'historique de saisonnalité</span>
                         </div>
                         <ResponsiveContainer width="100%" height={180}>
                             <BarChart data={monthlyBreakdown}>
