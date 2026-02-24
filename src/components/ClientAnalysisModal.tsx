@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Users, Info, FileText, ChevronRight, Download, Loader, CheckCircle2, AlertCircle, ArrowLeft, Edit2, Save } from 'lucide-react';
+import { X, Users, Info, FileText, ChevronRight, Download, Loader, CheckCircle2, ArrowLeft, Edit2, Save } from 'lucide-react';
 import { useData } from '../hooks/useData';
 import { updateClientData } from '../services/api';
 import type { Client } from '../types';
@@ -116,35 +116,39 @@ const ClientAnalysisModal: React.FC<ClientAnalysisModalProps> = ({ isOpen, onClo
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm p-4 text-left">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
                 {/* Header */}
-                <div className="flex justify-between items-center p-6 border-b border-zinc-100 bg-zinc-50/50">
-                    <div className="flex-1">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-4 md:p-6 border-b border-zinc-100 bg-zinc-50/50 gap-4">
+                    <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3">
-                            <Info className="text-zinc-400 shrink-0" size={28} />
-                            <h2 className="text-2xl font-black text-zinc-900 truncate">
-                                Analyse Détaillée : {isEditing ? (
+                            <Info className="text-zinc-400 shrink-0 hidden sm:block" size={24} />
+                            <h2 className="text-lg md:text-2xl font-black text-zinc-900 truncate">
+                                {isEditing ? (
                                     <input
                                         value={editedClient.nom}
                                         onChange={(e) => handleFieldChange('nom', e.target.value)}
-                                        className="bg-zinc-100 border border-zinc-200 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-zinc-900 w-auto"
+                                        className="bg-zinc-100 border border-zinc-200 rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-zinc-900 w-full max-w-md"
+                                        placeholder="Nom du client"
                                     />
-                                ) : editedClient.nom}
+                                ) : (
+                                    <span>Analyse : {editedClient.nom}</span>
+                                )}
                             </h2>
                         </div>
-                        <p className="text-sm text-zinc-500 mt-1">Profil technique et patrimonial complet du client</p>
+                        <p className="text-[10px] md:text-sm text-zinc-500 mt-1 font-medium uppercase tracking-widest hidden sm:block">Fiche technique et patrimoniale</p>
                     </div>
-                    <div className="flex items-center gap-4">
+
+                    <div className="flex items-center gap-2 w-full md:w-auto">
                         <button
                             onClick={() => isEditing ? handleSaveClient() : handleStartEditing()}
                             disabled={isSaving}
-                            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all shadow-md hover:shadow-lg text-sm ${isEditing ? 'bg-zinc-900 text-white hover:bg-zinc-800' : 'bg-white text-zinc-900 border border-zinc-200 hover:border-zinc-900'
+                            className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-black transition-all shadow-md hover:shadow-lg text-[11px] md:text-sm ${isEditing ? 'bg-zinc-900 text-white hover:bg-zinc-800' : 'bg-white text-zinc-900 border border-zinc-200 hover:border-zinc-900'
                                 }`}
                         >
                             {isSaving ? (
-                                <><Loader className="animate-spin" size={18} /> Enregistrement...</>
+                                <><Loader className="animate-spin" size={16} /></>
                             ) : isEditing ? (
-                                <><Save size={18} /> Enregistrer les modifs</>
+                                <><Save size={16} /> <span className="hidden sm:inline">Enregistrer</span></>
                             ) : (
-                                <><Edit2 size={18} /> Modifier les données</>
+                                <><Edit2 size={16} /> <span className="hidden sm:inline">Modifier</span></>
                             )}
                         </button>
 
@@ -152,24 +156,22 @@ const ClientAnalysisModal: React.FC<ClientAnalysisModalProps> = ({ isOpen, onClo
                             <button
                                 onClick={handleRestitution}
                                 disabled={isRestituting}
-                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all shadow-md hover:shadow-lg text-sm ${restitutionStatus === 'success' ? 'bg-emerald-500 text-white' :
+                                className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-black transition-all shadow-md hover:shadow-lg text-[11px] md:text-sm ${restitutionStatus === 'success' ? 'bg-emerald-500 text-white' :
                                     restitutionStatus === 'error' ? 'bg-red-500 text-white' :
                                         'bg-zinc-900 text-white hover:bg-zinc-800'
                                     }`}
                             >
                                 {isRestituting ? (
-                                    <><Loader className="animate-spin" size={18} /> Traitement...</>
+                                    <><Loader className="animate-spin" size={16} /></>
                                 ) : restitutionStatus === 'success' ? (
-                                    <><CheckCircle2 size={18} /> Envoyé !</>
-                                ) : restitutionStatus === 'error' ? (
-                                    <><AlertCircle size={18} /> Échec</>
+                                    <><CheckCircle2 size={16} /> <span className="hidden sm:inline">Envoyé</span></>
                                 ) : (
-                                    <><Download size={18} /> Restitution du bilan</>
+                                    <><Download size={16} /> <span className="hidden sm:inline">Restitution</span><span className="sm:hidden">PDF</span></>
                                 )}
                             </button>
                         )}
 
-                        <button onClick={onClose} className="p-2 hover:bg-zinc-200 rounded-full transition-colors bg-zinc-100">
+                        <button onClick={onClose} className="p-2 hover:bg-zinc-200 rounded-full transition-colors bg-zinc-100 shrink-0">
                             <X size={20} className="text-zinc-600" />
                         </button>
                     </div>
@@ -378,10 +380,10 @@ const ClientAnalysisModal: React.FC<ClientAnalysisModalProps> = ({ isOpen, onClo
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 border-t border-zinc-100 bg-zinc-50/50 flex justify-end">
+                <div className="p-4 md:p-6 border-t border-zinc-100 bg-zinc-50/50 flex justify-end">
                     <button
                         onClick={onClose}
-                        className="px-8 py-3 bg-white text-zinc-900 border border-zinc-200 rounded-xl font-bold hover:bg-zinc-50 transition-all text-sm"
+                        className="w-full md:w-auto px-10 py-3 bg-white text-zinc-900 border border-zinc-200 rounded-xl font-black hover:bg-zinc-50 transition-all text-xs md:text-sm uppercase tracking-widest shadow-sm"
                     >
                         Fermer le diagnostic
                     </button>
