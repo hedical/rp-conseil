@@ -1,5 +1,6 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useData, DataProvider } from './context/DataContext';
+import { DataProvider } from './context/DataContext';
+import { useData } from './hooks/useData';
 import PasswordModal from './components/PasswordModal';
 import Layout from './components/layout/Layout';
 import Dashboard from './pages/Dashboard';
@@ -8,6 +9,7 @@ import ClientDetail from './pages/ClientDetail';
 import Analysis from './pages/Analysis';
 import ProductAnalysis from './pages/ProductAnalysis';
 import Simulator from './pages/Simulator';
+import Settings from './pages/Settings';
 import Campaigns from './pages/Campaigns';
 
 function AppContent() {
@@ -28,7 +30,7 @@ function AppContent() {
           <Route path="analysis/product/:productName" element={<ProductAnalysis />} />
           <Route path="simulator" element={<Simulator />} />
           <Route path="campaigns" element={<Campaigns />} />
-          <Route path="settings" element={<div className="p-8 text-center text-gray-500">Paramètres (En construction)</div>} />
+          <Route path="settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

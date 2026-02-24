@@ -1,278 +1,304 @@
+import { supabase } from '../lib/supabase';
+import type { Sale, Client, Product, SimulationType } from '../types';
 
-import type { Sale } from '../types';
-
-const MOCK_DATA: Sale[] = [
-    {
-        id: 1,
-        row_number: 1,
-        produit: "PINEL",
-        nom: "MEIROSU",
-        type: "F",
-        parrain: "",
-        dateVente: "2020",
-        programme: "Domaine du Val / C404 / Cagnes sur Mer",
-        promoteur: "PICHET",
-        prixPack: "274 889 €",
-        prix: "247 000,00 €",
-        dispositif: "PINEL",
-        remuneration: "9,00%",
-        caGeneral: "22 230 €",
-        caPerso: "8 892,00 €",
-        fIngenierie: "SO",
-        fIngenierieRPC: "0,00 €",
-        montantFacturable: "8 892,00 €",
-        dateFacture: "18/8/2020",
-        annulation: "",
-        statut: "Réglé",
-        annulationBoolean: "",
-        commentaires: "",
-        annee: 2020
-    },
-    {
-        id: 2,
-        row_number: 2,
-        produit: "PINEL",
-        nom: "GNOSSIKE",
-        type: "F",
-        parrain: "",
-        dateVente: "17/12/2019",
-        programme: "Atelier PICAS'O / E 609 / Bobigny",
-        promoteur: "PICHET",
-        prixPack: "151 779 €",
-        prix: "136 500,00 €",
-        dispositif: "PINEL",
-        remuneration: "10,00%",
-        caGeneral: "13 650 €",
-        caPerso: "5 460,00 €",
-        fIngenierie: "SO",
-        fIngenierieRPC: "0,00 €",
-        montantFacturable: "5 460,00 €",
-        dateFacture: "",
-        annulation: "5 460,00 €",
-        statut: "Annulé",
-        annulationBoolean: "X",
-        commentaires: "Défaut de financement",
-        annee: 2019
-    }
-];
-
-const WEBHOOK_URL = 'https://databuildr.app.n8n.cloud/webhook/rp-data';
-const UPDATE_WEBHOOK_URL = 'https://databuildr.app.n8n.cloud/webhook/rp-update-data';
-const DELETE_WEBHOOK_URL = 'https://databuildr.app.n8n.cloud/webhook/rp-delete-data';
-
-// Raw data interface matching the webhook JSON structure exactly
-interface RawSale {
-    "row_number": number;
-    "ID": number;
-    "Produit": string;
-    "Nom ": string;
-    "F / P": string;
-    "Nom Parrain": string;
-    "Date de la vente": string;
-    "Programme / lot / localisation ": string;
-    "Promoteur": string;
-    "Prix pack": number;
-    "Prix": number;
-    "Dispositif": string;
-    "T. Rem": number;
-    "CA général ": number;
-    "CA perso": number;
-    "F. Ingénierie": string;
-    "F. Ingénierie RPC": number;
-    "Montant facturable": number;
-    "Date Facture": string;
-    "Annulation": string | number;
-    "Statut": string;
-    "AnnulationBoolean": string;
-    "Commentaires / N° facture": string;
-    "Année": string | number;
-}
-
+// Helper to format currency for the UI
 const formatCurrency = (value: number | string): string => {
-    if (typeof value === 'string') return value;
-    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(value);
+    const num = typeof value === 'string' ? parseFloat(value.replace(/[^0-9,-]+/g, "").replace(',', '.')) : value;
+    if (isNaN(num)) return "0,00 €";
+    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(num);
 };
 
+// Helper to format percent for the UI
 const formatPercent = (value: number | string): string => {
-    if (typeof value === 'string') return value;
-    return new Intl.NumberFormat('fr-FR', { style: 'percent', minimumFractionDigits: 2 }).format(value);
+    const num = typeof value === 'string' ? parseFloat(value.replace(/[^0-9,-]+/g, "").replace(',', '.')) : value;
+    if (isNaN(num)) return "0,00%";
+    return new Intl.NumberFormat('fr-FR', { style: 'percent', minimumFractionDigits: 2 }).format(num / 100);
 };
 
-const mapRawSaleToSale = (raw: RawSale): Sale => {
-    // Robust ID parsing
-    const parsedId = typeof raw.ID === 'number' ? raw.ID : parseInt(String(raw.ID || '0'));
+export const fetchSalesData = async (): Promise<Sale[]> => {
+    const { data, error } = await supabase
+        .from('suivi_produits')
+        .select(`
+            *,
+            clients (nom),
+            liste_produits (nom)
+        `)
+        .order('id', { ascending: false });
 
-    return {
-        id: isNaN(parsedId) ? 0 : parsedId,
-        row_number: raw.row_number,
-        produit: raw.Produit,
-        nom: raw["Nom "].trim(), // Remove trailing space found in key "Nom "
-        type: raw["F / P"],
-        parrain: raw["Nom Parrain"],
-        dateVente: raw["Date de la vente"],
-        programme: raw["Programme / lot / localisation "],
-        promoteur: raw.Promoteur,
-        prixPack: formatCurrency(raw["Prix pack"]),
-        prix: formatCurrency(raw.Prix),
-        dispositif: raw.Dispositif,
-        remuneration: formatPercent(raw["T. Rem"]),
-        caGeneral: formatCurrency(raw["CA général "]),
-        caPerso: formatCurrency(raw["CA perso"]),
-        fIngenierie: raw["F. Ingénierie"],
-        fIngenierieRPC: formatCurrency(raw["F. Ingénierie RPC"]),
-        montantFacturable: formatCurrency(raw["Montant facturable"]),
-        dateFacture: raw["Date Facture"],
-        annulation: raw.Annulation ? formatCurrency(Number(raw.Annulation)) : "", // Handle potentially empty string or number
-        statut: raw.Statut,
-        annulationBoolean: raw.AnnulationBoolean,
-        commentaires: raw["Commentaires / N° facture"],
-        annee: parseInt(String(raw["Année"] || raw["Date de la vente"] || new Date().getFullYear()))
-    };
-};
-
-export const fetchSalesData = async (password: string): Promise<Sale[]> => {
-    try {
-        // Add cache busting timestamp
-        const cacheBuster = new Date().getTime();
-        const response = await fetch(`${WEBHOOK_URL}?t=${cacheBuster}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                password: password
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        console.log("🔍 API Response Received:", data);
-
-        // Validation: Ensure data is an array or single object
-        let rawData: RawSale[] = [];
-
-        if (Array.isArray(data)) {
-            rawData = data;
-        } else if (data && typeof data === 'object' && Array.isArray(data.data)) {
-            // Handle { data: [...] } format if applicable
-            rawData = data.data;
-        } else if (data && typeof data === 'object') {
-            // Handle single object response (row)
-            rawData = [data as RawSale];
-        } else {
-            throw new Error("Fetched data is not an array or valid object");
-        }
-
-        // Map raw data to application internal structure
-        const mappedData = rawData.map(mapRawSaleToSale);
-
-        console.log(`📊 Validated Data: ${mappedData.length} items`);
-        const maxId = Math.max(...mappedData.map(s => s.id));
-        console.log(`🔢 Max ID found: ${maxId}`);
-
-        return mappedData;
-
-    } catch (error) {
-        console.warn("Failed to fetch from webhook, using mock data:", error);
-        // Simulate network delay
-        return new Promise((resolve) => {
-            setTimeout(() => resolve(MOCK_DATA), 500);
-        });
+    if (error) {
+        console.error('Error fetching sales:', error);
+        throw error;
     }
+
+    return data.map((item: any) => ({
+        id: item.id,
+        client_id: item.client_id,
+        produit_id: item.produit_id,
+        produit: item.liste_produits?.nom || 'Inconnu',
+        client_nom: item.clients?.nom || 'Inconnu',
+        type: item.type,
+        parrain: item.nom_parrain || '',
+        dateVente: item.date_vente || '',
+        programme: item.programme || '',
+        promoteur: item.promoteur || '',
+        prixPack: formatCurrency(item.prix_pack),
+        prix: formatCurrency(item.prix),
+        dispositif: item.dispositif || '',
+        remuneration: formatPercent(item.remuneration_taux * 100),
+        caGeneral: formatCurrency(item.ca_general),
+        caPerso: formatCurrency(item.ca_perso),
+        fIngenierie: item.f_ingenierie || '',
+        fIngenierieRPC: formatCurrency(item.f_ingenierie_rpc),
+        montantFacturable: formatCurrency(item.montant_facturable),
+        dateFacture: item.date_facture || '',
+        annulation: formatCurrency(item.annulation),
+        statut: item.statut || '',
+        annulationBoolean: item.annulation_boolean ? 'X' : '',
+        commentaires: item.commentaires || '',
+        annee: item.annee || new Date().getFullYear()
+    }));
 };
 
-// Function to convert Sale back to RawSale format for update
-const mapSaleToRawSale = (sale: Sale): RawSale => {
-    const parseToNumber = (str: string): number => {
-        if (!str) return 0;
-        return parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.'));
-    };
+export const fetchClientsData = async (): Promise<Client[]> => {
+    const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    const parsePercent = (str: string): number => {
-        if (!str) return 0;
-        const num = parseFloat(str.replace(/[^0-9,-]+/g, "").replace(',', '.'));
-        return num / 100; // Convert "9,00%" to 0.09
-    };
+    if (error) {
+        console.error('Error fetching clients:', error);
+        throw error;
+    }
 
-    return {
-        "row_number": sale.row_number || sale.id, // Use actual row_number if available, else fallback to ID
-        "ID": sale.id,
-        "Produit": sale.produit,
-        "Nom ": sale.nom,
-        "F / P": sale.type,
-        "Nom Parrain": sale.parrain,
-        "Date de la vente": sale.dateVente,
-        "Programme / lot / localisation ": sale.programme,
-        "Promoteur": sale.promoteur,
-        "Prix pack": parseToNumber(sale.prixPack),
-        "Prix": parseToNumber(sale.prix),
-        "Dispositif": sale.dispositif,
-        "T. Rem": parsePercent(sale.remuneration),
-        "CA général ": parseToNumber(sale.caGeneral),
-        "CA perso": parseToNumber(sale.caPerso),
-        "F. Ingénierie": sale.fIngenierie,
-        "F. Ingénierie RPC": parseToNumber(sale.fIngenierieRPC),
-        "Montant facturable": parseToNumber(sale.montantFacturable),
-        "Date Facture": sale.dateFacture,
-        "Annulation": sale.annulation ? parseToNumber(sale.annulation) : "",
-        "Statut": sale.statut,
-        "AnnulationBoolean": sale.annulationBoolean,
-        "Commentaires / N° facture": sale.commentaires,
-        "Année": sale.annee.toString()
-    };
+    return data.map((item: any) => ({
+        ...item,
+        totalCA: 0, // Calculated in context
+        totalCAPerso: 0 // Calculated in context
+    }));
 };
 
-export const updateSaleData = async (sale: Sale, password: string): Promise<void> => {
-    try {
-        const rawSale = mapSaleToRawSale(sale);
+export const fetchProductsData = async (): Promise<Product[]> => {
+    const { data, error } = await supabase
+        .from('liste_produits')
+        .select('*')
+        .order('nom');
 
-        const response = await fetch(UPDATE_WEBHOOK_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                password: password,
-                data: rawSale
-            })
-        });
+    if (error) {
+        console.error('Error fetching products:', error);
+        throw error;
+    }
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+    return data;
+};
 
-        console.log("✅ Data updated successfully");
-    } catch (error) {
-        console.error("Failed to update data:", error);
+export const updateSaleData = async (sale: Partial<Sale>): Promise<void> => {
+    const { error } = await supabase
+        .from('suivi_produits')
+        .update({
+            // Map camelCase to snake_case
+            type: sale.type,
+            nom_parrain: sale.parrain,
+            date_vente: sale.dateVente,
+            programme: sale.programme,
+            promoteur: sale.promoteur,
+            prix_pack: sale.prixPack ? parseFloat(sale.prixPack.replace(/[^0-9,-]+/g, "").replace(',', '.')) : undefined,
+            prix: sale.prix ? parseFloat(sale.prix.replace(/[^0-9,-]+/g, "").replace(',', '.')) : undefined,
+            dispositif: sale.dispositif,
+            remuneration_taux: sale.remuneration ? parseFloat(sale.remuneration.replace(/[^0-9,-]+/g, "").replace(',', '.')) / 100 : undefined,
+            ca_general: sale.caGeneral ? parseFloat(sale.caGeneral.replace(/[^0-9,-]+/g, "").replace(',', '.')) : undefined,
+            ca_perso: sale.caPerso ? parseFloat(sale.caPerso.replace(/[^0-9,-]+/g, "").replace(',', '.')) : undefined,
+            f_ingenierie: sale.fIngenierie,
+            f_ingenierie_rpc: sale.fIngenierieRPC ? parseFloat(sale.fIngenierieRPC.replace(/[^0-9,-]+/g, "").replace(',', '.')) : undefined,
+            montant_facturable: sale.montantFacturable ? parseFloat(sale.montantFacturable.replace(/[^0-9,-]+/g, "").replace(',', '.')) : undefined,
+            date_facture: sale.dateFacture,
+            annulation: sale.annulation ? parseFloat(sale.annulation.replace(/[^0-9,-]+/g, "").replace(',', '.')) : undefined,
+            statut: sale.statut,
+            annulation_boolean: sale.annulationBoolean === 'X',
+            commentaires: sale.commentaires,
+            annee: sale.annee
+        })
+        .eq('id', sale.id);
+
+    if (error) {
+        console.error('Error updating sale:', error);
         throw error;
     }
 };
 
-export const deleteSaleData = async (saleId: number, rowNumber: number, password: string): Promise<void> => {
-    try {
-        const response = await fetch(DELETE_WEBHOOK_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                password: password,
-                data: {
-                    "ID": saleId,
-                    "row_number": rowNumber
-                }
-            })
-        });
+export const createSaleData = async (sale: Partial<Sale>): Promise<void> => {
+    // Helper to find product_id from product name
+    const { data: products } = await supabase.from('liste_produits').select('id').eq('nom', sale.produit).single();
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+    const { error } = await supabase
+        .from('suivi_produits')
+        .insert([{
+            client_id: sale.client_id,
+            produit_id: products?.id,
+            type: sale.type,
+            nom_parrain: sale.parrain,
+            date_vente: sale.dateVente,
+            programme: sale.programme,
+            promoteur: sale.promoteur,
+            prix_pack: sale.prixPack ? parseFloat(sale.prixPack.replace(/[^0-9,-]+/g, "").replace(',', '.')) : 0,
+            prix: sale.prix ? parseFloat(sale.prix.replace(/[^0-9,-]+/g, "").replace(',', '.')) : 0,
+            dispositif: sale.dispositif,
+            remuneration_taux: sale.remuneration ? parseFloat(sale.remuneration.replace(/[^0-9,-]+/g, "").replace(',', '.')) / 100 : 0,
+            ca_general: sale.caGeneral ? parseFloat(sale.caGeneral.replace(/[^0-9,-]+/g, "").replace(',', '.')) : 0,
+            ca_perso: sale.caPerso ? parseFloat(sale.caPerso.replace(/[^0-9,-]+/g, "").replace(',', '.')) : 0,
+            f_ingenierie: sale.fIngenierie,
+            f_ingenierie_rpc: sale.fIngenierieRPC ? parseFloat(sale.fIngenierieRPC.replace(/[^0-9,-]+/g, "").replace(',', '.')) : 0,
+            montant_facturable: sale.montantFacturable ? parseFloat(sale.montantFacturable.replace(/[^0-9,-]+/g, "").replace(',', '.')) : 0,
+            date_facture: sale.dateFacture,
+            annulation: sale.annulation ? parseFloat(sale.annulation.replace(/[^0-9,-]+/g, "").replace(',', '.')) : 0,
+            statut: sale.statut,
+            annulation_boolean: sale.annulationBoolean === 'X',
+            commentaires: sale.commentaires,
+            annee: sale.annee
+        }]);
 
-        console.log(`✅ Data with ID ${saleId} deleted successfully`);
-    } catch (error) {
-        console.error("Failed to delete data:", error);
+    if (error) {
+        console.error('Error creating sale:', error);
+        throw error;
+    }
+};
+
+export const deleteSaleData = async (saleId: number): Promise<void> => {
+    const { error } = await supabase
+        .from('suivi_produits')
+        .delete()
+        .eq('id', saleId);
+
+    if (error) {
+        console.error('Error deleting sale:', error);
+        throw error;
+    }
+};
+
+export const createClient = async (client: Partial<Client>): Promise<string> => {
+    const { data, error } = await supabase
+        .from('clients')
+        .insert([client])
+        .select('id')
+        .single();
+
+    if (error) {
+        console.error('Error creating client:', error);
+        throw error;
+    }
+
+    return data.id;
+};
+export const updateClientData = async (client: Partial<Client>): Promise<void> => {
+    const { id, ...updateFields } = client;
+
+    // Remove transient/calculated fields before updating
+    const { totalCA, totalCAPerso, sales, ...cleanFields } = updateFields as any;
+
+    const { error } = await supabase
+        .from('clients')
+        .update(cleanFields)
+        .eq('id', id);
+
+    if (error) {
+        console.error('Error updating client:', error);
+        throw error;
+    }
+};
+
+export const fetchSimulationTypes = async (): Promise<SimulationType[]> => {
+    const { data, error } = await supabase
+        .from('simulations_type')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching simulation types:', error);
+        throw error;
+    }
+
+    return data;
+};
+
+export const createSimulationType = async (template: Partial<SimulationType>): Promise<void> => {
+    const { error } = await supabase
+        .from('simulations_type')
+        .insert([template]);
+
+    if (error) {
+        console.error('Error creating simulation type:', error);
+        throw error;
+    }
+};
+
+export const updateSimulationType = async (template: Partial<SimulationType>): Promise<void> => {
+    const { id, ...updateFields } = template;
+    const { error } = await supabase
+        .from('simulations_type')
+        .update(updateFields)
+        .eq('id', id);
+
+    if (error) {
+        console.error('Error updating simulation type:', error);
+        throw error;
+    }
+};
+
+export const deleteSimulationType = async (id: number): Promise<void> => {
+    const { error } = await supabase
+        .from('simulations_type')
+        .delete()
+        .eq('id', id);
+
+    if (error) {
+        console.error('Error deleting simulation type:', error);
+        throw error;
+    }
+};
+
+export const createProduct = async (product: Partial<Product>): Promise<void> => {
+    const { error } = await supabase
+        .from('liste_produits')
+        .insert([product]);
+
+    if (error) {
+        console.error('Error creating product:', error);
+        throw error;
+    }
+};
+
+export const updateProduct = async (product: Partial<Product>): Promise<void> => {
+    const { id, ...updateFields } = product;
+    const { error } = await supabase
+        .from('liste_produits')
+        .update(updateFields)
+        .eq('id', id);
+
+    if (error) {
+        console.error('Error updating product:', error);
+        throw error;
+    }
+};
+
+export const deleteProduct = async (id: string): Promise<void> => {
+    const { error } = await supabase
+        .from('liste_produits')
+        .delete()
+        .eq('id', id);
+
+    if (error) {
+        console.error('Error deleting product:', error);
+        throw error;
+    }
+};
+
+export const updateClientSimulation = async (clientId: string, simulationMarkdown: string): Promise<void> => {
+    const { error } = await supabase
+        .from('clients')
+        .update({ simulation_1: simulationMarkdown })
+        .eq('id', clientId);
+
+    if (error) {
+        console.error('Error updating client simulation:', error);
         throw error;
     }
 };

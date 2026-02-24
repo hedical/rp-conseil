@@ -1,5 +1,5 @@
 import React from 'react';
-import { useData } from '../context/DataContext';
+import { useData } from '../hooks/useData';
 import StatCard from '../components/dashboard/StatCard';
 import ActivityChart from '../components/dashboard/ActivityChart';
 import BillingTracking from '../components/dashboard/dashboard/BillingTracking';
@@ -46,6 +46,7 @@ const Dashboard: React.FC = () => {
     // Prepare chart data with CA Général and CA Perso breakdown
     const salesByYear = sales.reduce((acc: any, sale) => {
         const year = sale.annee;
+        const clientName = sale.client_nom || 'Inconnu';
         const status = (sale.statut || '').toLowerCase();
         if (status.includes('annul')) return acc; // Only show non-cancelled in the chart to match cards
 
@@ -99,7 +100,7 @@ const Dashboard: React.FC = () => {
                         {[...sales].sort((a, b) => b.id - a.id).slice(0, 5).map(sale => (
                             <div key={sale.id} className="flex items-center justify-between p-3 rounded-md hover:bg-zinc-50 border border-transparent hover:border-zinc-200 transition-all">
                                 <div>
-                                    <p className="font-medium text-zinc-900">{sale.nom}</p>
+                                    <p className="font-medium text-zinc-900">{sale.client_nom}</p>
                                     <div className="flex items-center gap-2 mt-1">
                                         <span className="text-xs font-semibold px-2 py-0.5 bg-zinc-100 text-zinc-600 rounded-full">{sale.produit}</span>
                                         <span className="text-xs text-zinc-500">{sale.annee}</span>

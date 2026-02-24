@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useData } from '../context/DataContext';
+import { useData } from '../hooks/useData';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LineChart, Line } from 'recharts';
 import { TrendingUp, Users, FileText, Award, Filter, Clock, Calendar, AlertCircle } from 'lucide-react';
 
@@ -150,20 +150,20 @@ const Analysis: React.FC = () => {
 
         const clientFirstSale = new Map<string, Date>();
         clients.forEach(c => {
-            const dates = c.sales
+            const dates = (c.sales || [])
                 .map(s => parseDate(s.dateVente))
                 .filter(d => d !== null) as Date[];
             if (dates.length > 0) {
                 const firstDate = new Date(Math.min(...dates.map(d => d.getTime())));
-                clientFirstSale.set(c.name.trim().toLowerCase(), firstDate);
+                clientFirstSale.set(c.nom.trim().toLowerCase(), firstDate);
             }
         });
 
         clients.forEach(c => {
-            const parrainName = c.sales[0]?.parrain?.trim();
+            const parrainName = c.sales?.[0]?.parrain?.trim();
             if (parrainName && clientFirstSale.has(parrainName.toLowerCase())) {
                 const parrainDate = clientFirstSale.get(parrainName.toLowerCase())!;
-                const godchildDate = clientFirstSale.get(c.name.trim().toLowerCase());
+                const godchildDate = clientFirstSale.get(c.nom.trim().toLowerCase());
                 if (godchildDate && godchildDate > parrainDate) {
                     const days = daysBetween(parrainDate, godchildDate);
                     totalDays += days;

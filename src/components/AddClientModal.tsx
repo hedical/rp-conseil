@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useData } from '../context/DataContext';
-import { updateSaleData } from '../services/api';
+import { useData } from '../hooks/useData';
+import { createClient, createSaleData } from '../services/api';
 import type { Sale } from '../types';
 import { X, Plus, Loader } from 'lucide-react';
 
@@ -11,13 +11,13 @@ interface AddClientModalProps {
 }
 
 const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initialClientName }) => {
-    const { sales, password, refetchData } = useData();
+    const { clients, refetchData, products } = useData();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     // Initial state for new sale
     const [newSale, setNewSale] = useState<Partial<Sale>>({
-        produit: 'PINEL',
+        produit: '',
         type: 'F',
         annee: new Date().getFullYear(),
         statut: 'A facturer',
@@ -25,52 +25,41 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initia
         prix: '0,00 €',
         caPerso: '0,00 €',
         caGeneral: '0,00 €',
-        // Initialize other fields as empty strings to avoid uncontrolled input warnings
-        nom: initialClientName || '',
         programme: '',
         promoteur: '',
         dateVente: '',
+        parrain: '',
+        dispositif: 'PINEL',
+        prixPack: '0,00 €',
+        fIngenierie: 'SO',
+        fIngenierieRPC: '0,00 €',
+        montantFacturable: '0,00 €',
+        dateFacture: '',
+        annulation: '',
+        commentaires: '',
     });
+
+    const [clientNom, setClientNom] = useState(initialClientName || '');
 
     // Update nom if initialClientName changes
     useEffect(() => {
         if (initialClientName) {
-            setNewSale(prev => ({ ...prev, nom: initialClientName }));
+            setClientNom(initialClientName);
         }
     }, [initialClientName]);
 
-    // Calculate next ID when modal opens or sales change
-    const [nextId, setNextId] = useState<number>(0);
-
-    useEffect(() => {
-        if (isOpen && sales.length > 0) {
-            const allIds = sales.map(s => s.id).filter(id => !isNaN(id));
-            const maxId = allIds.length > 0 ? Math.max(...allIds) : 0;
-            const computedNext = maxId + 1;
-
-            console.log("🔍 Computing Next ID:", {
-                totalSales: sales.length,
-                maxFound: maxId,
-                next: computedNext
-            });
-
-            setNextId(computedNext);
+    const handleChange = (field: keyof Sale | 'nom', value: any) => {
+        if (field === 'nom') {
+            setClientNom(value);
+        } else {
+            setNewSale(prev => ({ ...prev, [field]: value }));
         }
-    }, [isOpen, sales]);
-
-    const handleChange = (field: keyof Sale, value: any) => {
-        setNewSale(prev => ({ ...prev, [field]: value }));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!password) {
-            setError("Mot de passe manquant. Veuillez recharger la page.");
-            return;
-        }
-
-        if (!newSale.nom || !newSale.produit) {
+        if (!clientNom || !newSale.produit) {
             setError("Le nom et le produit sont obligatoires.");
             return;
         }
@@ -79,31 +68,30 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initia
         setError(null);
 
         try {
-            // Prepare the full sale object
-            const saleToSubmit: Sale = {
-                ...newSale as Sale,
-                id: nextId,
-                row_number: 0, // New items don't have a row number yet, n8n will assign append
-                // Default values for fields not in form
-                parrain: '',
-                prixPack: '0,00 €',
-                dispositif: newSale.produit || '',
-                fIngenierie: 'SO',
-                fIngenierieRPC: '0,00 €',
-                montantFacturable: newSale.caPerso || '0,00 €',
-                dateFacture: '',
-                annulation: '',
-                annulationBoolean: '',
-                commentaires: '',
+            let clientId: string;
+
+            // 1. Find or create client
+            const existingClient = clients.find(c => c.nom.toLowerCase() === clientNom.toLowerCase());
+
+            if (existingClient) {
+                clientId = existingClient.id;
+            } else {
+                clientId = await createClient({ nom: clientNom });
+            }
+
+            // 2. Create the sale
+            const saleToSubmit: Partial<Sale> = {
+                ...newSale,
+                client_id: clientId
             };
 
-            await updateSaleData(saleToSubmit, password);
+            await createSaleData(saleToSubmit);
             await refetchData();
 
             onClose();
-            // Reset form (optional, as component unmounts on close usually)
+            // Reset form
             setNewSale({
-                produit: 'PINEL',
+                produit: '',
                 type: 'F',
                 annee: new Date().getFullYear(),
                 statut: 'A facturer',
@@ -111,14 +99,23 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initia
                 prix: '0,00 €',
                 caPerso: '0,00 €',
                 caGeneral: '0,00 €',
-                nom: initialClientName || '',
                 programme: '',
                 promoteur: '',
                 dateVente: '',
+                parrain: '',
+                dispositif: 'PINEL',
+                prixPack: '0,00 €',
+                fIngenierie: 'SO',
+                fIngenierieRPC: '0,00 €',
+                montantFacturable: '0,00 €',
+                dateFacture: '',
+                annulation: '',
+                commentaires: '',
             });
+            if (!initialClientName) setClientNom('');
 
         } catch (err) {
-            console.error("Error adding client:", err);
+            console.error("Error adding client/sale:", err);
             setError("Erreur lors de l'ajout. Vérifiez votre connexion.");
         } finally {
             setIsSubmitting(false);
@@ -148,20 +145,12 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initia
                     )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* ID - Read Only */}
-                        <div className="md:col-span-2">
-                            <label className="block text-xs font-medium text-zinc-400 mb-1 uppercase tracking-wide">ID Dossier (Auto)</label>
-                            <div className="p-3 bg-zinc-100 border border-zinc-200 rounded-lg text-zinc-500 font-mono font-bold">
-                                {nextId}
-                            </div>
-                        </div>
-
                         {/* Client Info */}
                         <div className="md:col-span-2">
                             <label className="block text-sm font-medium text-zinc-700 mb-1">Nom du Client *</label>
                             <input
                                 type="text"
-                                value={newSale.nom}
+                                value={clientNom}
                                 onChange={(e) => handleChange('nom', e.target.value)}
                                 className={`w-full p-3 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:border-black transition-all ${initialClientName ? 'bg-zinc-100 text-zinc-500 cursor-not-allowed' : ''}`}
                                 placeholder="ex: DUPONT Jean"
@@ -170,25 +159,56 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initia
                             />
                         </div>
 
-                        {/* Deal Info */}
+                        {/* Section: Product & Origin */}
+                        <div className="md:col-span-2 border-b border-zinc-100 pb-2 mt-2">
+                            <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Produit & Origine</h3>
+                        </div>
+
                         <div>
                             <label className="block text-sm font-medium text-zinc-700 mb-1">Produit *</label>
+                            <select
+                                value={newSale.produit}
+                                onChange={(e) => {
+                                    handleChange('produit', e.target.value);
+                                    if (!newSale.dispositif) handleChange('dispositif', e.target.value);
+                                }}
+                                className="w-full p-3 border border-zinc-300 rounded-lg bg-white"
+                                required
+                            >
+                                <option value="">Choisir un produit...</option>
+                                {products.map(p => (
+                                    <option key={p.id} value={p.nom}>{p.nom}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">Dispositif</label>
                             <input
                                 type="text"
-                                value={newSale.produit}
-                                onChange={(e) => handleChange('produit', e.target.value)}
+                                value={newSale.dispositif}
+                                onChange={(e) => handleChange('dispositif', e.target.value)}
                                 className="w-full p-3 border border-zinc-300 rounded-lg"
                                 placeholder="ex: PINEL"
-                                required
                             />
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-zinc-700 mb-1">Année</label>
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">Programme / Lot</label>
                             <input
-                                type="number"
-                                value={newSale.annee}
-                                onChange={(e) => handleChange('annee', parseInt(e.target.value))}
+                                type="text"
+                                value={newSale.programme}
+                                onChange={(e) => handleChange('programme', e.target.value)}
+                                className="w-full p-3 border border-zinc-300 rounded-lg"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">Promoteur</label>
+                            <input
+                                type="text"
+                                value={newSale.promoteur}
+                                onChange={(e) => handleChange('promoteur', e.target.value)}
                                 className="w-full p-3 border border-zinc-300 rounded-lg"
                             />
                         </div>
@@ -206,21 +226,31 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initia
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-zinc-700 mb-1">Statut</label>
-                            <select
-                                value={newSale.statut}
-                                onChange={(e) => handleChange('statut', e.target.value)}
-                                className="w-full p-3 border border-zinc-300 rounded-lg bg-white"
-                            >
-                                <option value="A facturer">A facturer</option>
-                                <option value="Facturé">Facturé</option>
-                                <option value="Réglé">Réglé</option>
-                                <option value="Annulé">Annulé</option>
-                                <option value="Litige">Litige</option>
-                            </select>
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">Nom Parrain</label>
+                            <input
+                                type="text"
+                                value={newSale.parrain}
+                                onChange={(e) => handleChange('parrain', e.target.value)}
+                                className="w-full p-3 border border-zinc-300 rounded-lg"
+                                placeholder="Si parrainage"
+                            />
                         </div>
 
-                        {/* Financials */}
+                        {/* Section: Financials */}
+                        <div className="md:col-span-2 border-b border-zinc-100 pb-2 mt-4">
+                            <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Finances</h3>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">Prix Pack</label>
+                            <input
+                                type="text"
+                                value={newSale.prixPack}
+                                onChange={(e) => handleChange('prixPack', e.target.value)}
+                                className="w-full p-3 border border-zinc-300 rounded-lg"
+                            />
+                        </div>
+
                         <div>
                             <label className="block text-sm font-medium text-zinc-700 mb-1">Prix</label>
                             <input
@@ -242,12 +272,17 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initia
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-zinc-700 mb-1">CA Perso</label>
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">CA Perso *</label>
                             <input
                                 type="text"
                                 value={newSale.caPerso}
-                                onChange={(e) => handleChange('caPerso', e.target.value)}
-                                className="w-full p-3 border border-zinc-300 rounded-lg"
+                                onChange={(e) => {
+                                    handleChange('caPerso', e.target.value);
+                                    if (!newSale.montantFacturable || newSale.montantFacturable === '0,00 €') {
+                                        handleChange('montantFacturable', e.target.value);
+                                    }
+                                }}
+                                className="w-full p-3 border border-zinc-300 rounded-lg font-bold"
                             />
                         </div>
 
@@ -261,23 +296,84 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initia
                             />
                         </div>
 
-                        <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-zinc-700 mb-1">Programme / Lot</label>
+                        <div>
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">Montant Facturable</label>
                             <input
                                 type="text"
-                                value={newSale.programme}
-                                onChange={(e) => handleChange('programme', e.target.value)}
+                                value={newSale.montantFacturable}
+                                onChange={(e) => handleChange('montantFacturable', e.target.value)}
                                 className="w-full p-3 border border-zinc-300 rounded-lg"
                             />
                         </div>
 
-                        <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-zinc-700 mb-1">Promoteur</label>
+                        <div>
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">F. Ingénierie</label>
                             <input
                                 type="text"
-                                value={newSale.promoteur}
-                                onChange={(e) => handleChange('promoteur', e.target.value)}
+                                value={newSale.fIngenierie}
+                                onChange={(e) => handleChange('fIngenierie', e.target.value)}
                                 className="w-full p-3 border border-zinc-300 rounded-lg"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">F. Ingénierie RPC</label>
+                            <input
+                                type="text"
+                                value={newSale.fIngenierieRPC}
+                                onChange={(e) => handleChange('fIngenierieRPC', e.target.value)}
+                                className="w-full p-3 border border-zinc-300 rounded-lg"
+                            />
+                        </div>
+
+                        {/* Section: Admin */}
+                        <div className="md:col-span-2 border-b border-zinc-100 pb-2 mt-4">
+                            <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Suivi & Administratif</h3>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">Année</label>
+                            <input
+                                type="number"
+                                value={newSale.annee}
+                                onChange={(e) => handleChange('annee', parseInt(e.target.value))}
+                                className="w-full p-3 border border-zinc-300 rounded-lg"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">Date Vente</label>
+                            <input
+                                type="text"
+                                value={newSale.dateVente}
+                                onChange={(e) => handleChange('dateVente', e.target.value)}
+                                className="w-full p-3 border border-zinc-300 rounded-lg"
+                                placeholder="DD/MM/YYYY"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">Statut</label>
+                            <select
+                                value={newSale.statut}
+                                onChange={(e) => handleChange('statut', e.target.value)}
+                                className="w-full p-3 border border-zinc-300 rounded-lg bg-white"
+                            >
+                                <option value="A facturer">A facturer</option>
+                                <option value="Facturé">Facturé</option>
+                                <option value="Réglé">Réglé</option>
+                                <option value="Annulé">Annulé</option>
+                                <option value="Litige">Litige</option>
+                                <option value="En cours">En cours</option>
+                            </select>
+                        </div>
+
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-zinc-700 mb-1">Commentaires / N° Facture</label>
+                            <textarea
+                                value={newSale.commentaires}
+                                onChange={(e) => handleChange('commentaires', e.target.value)}
+                                className="w-full p-3 border border-zinc-300 rounded-lg h-24"
                             />
                         </div>
                     </div>
@@ -296,7 +392,7 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initia
                             disabled={isSubmitting}
                             className="px-6 py-3 bg-zinc-900 text-white rounded-lg font-bold hover:bg-zinc-800 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                         >
-                            {isSubmitting ? <><Loader className="animate-spin" size={20} /> Ajout en cours...</> : <><Plus size={20} /> Ajouter le Client</>}
+                            {isSubmitting ? <><Loader className="animate-spin" size={20} /> Ajout en cours...</> : <><Plus size={20} /> Ajouter le Dossier</>}
                         </button>
                     </div>
                 </form>

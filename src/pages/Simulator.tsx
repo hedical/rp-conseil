@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useData } from '../context/DataContext';
+import { useData } from '../hooks/useData';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine
 } from 'recharts';
