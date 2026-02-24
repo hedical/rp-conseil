@@ -46,7 +46,6 @@ const Dashboard: React.FC = () => {
     // Prepare chart data with CA Général and CA Perso breakdown
     const salesByYear = sales.reduce((acc: any, sale) => {
         const year = sale.annee;
-        const clientName = sale.client_nom || 'Inconnu';
         const status = (sale.statut || '').toLowerCase();
         if (status.includes('annul')) return acc; // Only show non-cancelled in the chart to match cards
 
