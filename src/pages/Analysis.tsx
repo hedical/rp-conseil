@@ -143,7 +143,57 @@ const Analysis: React.FC = () => {
 
     // --- Advanced Analytics Calculations ---
 
-    // 1. Sponsorship Lag (Temps moyen avant parrainage)
+    // 4. Sponsorship Leaderboard (Meilleurs Parrains)
+    const referralLeaderboard = React.useMemo(() => {
+        const sponsors: Record<string, { name: string; godchildrenCount: number; totalCA: number }> = {};
+
+        filteredSales.forEach(s => {
+            const parrainName = s.parrain?.trim();
+            if (parrainName && parrainName !== 'SO' && parrainName !== '') {
+                if (!sponsors[parrainName]) {
+                    sponsors[parrainName] = { name: parrainName, godchildrenCount: 0, totalCA: 0 };
+                }
+                // We count unique godchildren as sales where this parrain is mentioned
+                // (Note: This might overcount if one godchild has multiple sales, 
+                // but usually parrainage is per deal or per client entry)
+                sponsors[parrainName].godchildrenCount++;
+                sponsors[parrainName].totalCA += parseCurrency(s.caPerso);
+            }
+        });
+
+        return Object.values(sponsors)
+            .sort((a, b) => b.totalCA - a.totalCA)
+            .slice(0, 10);
+    }, [filteredSales]);
+
+    // 5. Referral Conversion Time (Délai moyen de conversion parrainé)
+    // Temps entre date_entree du client et sa première vente
+    const referralConversionTime = React.useMemo(() => {
+        let totalDays = 0;
+        let count = 0;
+
+        clients.forEach(c => {
+            // Only consider godchildren (type 'P' in their sales)
+            const godchildSales = (c.sales || []).filter(s => s.type === 'P');
+            if (godchildSales.length > 0 && c.date_entree) {
+                const dateEntree = new Date(c.date_entree);
+                const firstSaleDate = parseDate(godchildSales[0].dateVente);
+
+                if (firstSaleDate && firstSaleDate >= dateEntree) {
+                    const days = daysBetween(dateEntree, firstSaleDate);
+                    // Filter outlier or negative results
+                    if (days >= 0 && days < 730) { // < 2 years
+                        totalDays += days;
+                        count++;
+                    }
+                }
+            }
+        });
+
+        return count > 0 ? Math.round(totalDays / count) : 0;
+    }, [clients]);
+
+    // 6. Sponsorship Lag (Viralité: Délai avant 1er parrainage)
     const sponsorshipLag = React.useMemo(() => {
         let totalDays = 0;
         let count = 0;
@@ -166,8 +216,10 @@ const Analysis: React.FC = () => {
                 const godchildDate = clientFirstSale.get(c.nom.trim().toLowerCase());
                 if (godchildDate && godchildDate > parrainDate) {
                     const days = daysBetween(parrainDate, godchildDate);
-                    totalDays += days;
-                    count++;
+                    if (days > 0 && days < 1000) {
+                        totalDays += days;
+                        count++;
+                    }
                 }
             }
         });
@@ -242,6 +294,127 @@ const Analysis: React.FC = () => {
                 </div>
             </div>
 
+            {/* Sponsorship Dashboard */}
+            <div className="space-y-6">
+                <div className="flex items-center gap-3">
+                    <Award className="text-zinc-900" size={24} />
+                    <h2 className="text-xl font-black text-zinc-900 uppercase tracking-tighter">Analyse des Parrainages</h2>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {/* Metric: Best Sponsor */}
+                    <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
+                        <div>
+                            <p className="text-[10px] text-zinc-400 font-black uppercase tracking-widest mb-1">Meilleur Parrain</p>
+                            <h3 className="text-xl font-black text-zinc-900 truncate">
+                                {referralLeaderboard[0]?.name || "N/A"}
+                            </h3>
+                        </div>
+                        <div className="mt-4 pt-4 border-t border-zinc-100">
+                            <p className="text-2xl font-black text-zinc-900">
+                                {referralLeaderboard[0]?.totalCA.toLocaleString('fr-FR')} €
+                            </p>
+                            <p className="text-[10px] text-zinc-400 font-bold uppercase">CA Apporté</p>
+                        </div>
+                    </div>
+
+                    {/* Metric: Conv Time */}
+                    <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
+                        <div>
+                            <p className="text-[10px] text-zinc-400 font-black uppercase tracking-widest mb-1">Délai Conversion</p>
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-3xl font-black text-zinc-900">{referralConversionTime}</span>
+                                <span className="text-sm font-bold text-zinc-400">jours</span>
+                            </div>
+                        </div>
+                        <p className="text-[10px] text-zinc-400 font-medium leading-tight mt-2 italic">
+                            Temps moyen avant 1ère vente parrainée
+                        </p>
+                    </div>
+
+                    {/* Metric: Viral Speed */}
+                    <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
+                        <div>
+                            <p className="text-[10px] text-zinc-400 font-black uppercase tracking-widest mb-1">Vitesse de Viralité</p>
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-3xl font-black text-zinc-900">{sponsorshipLag}</span>
+                                <span className="text-sm font-bold text-zinc-400">jours</span>
+                            </div>
+                        </div>
+                        <p className="text-[10px] text-zinc-400 font-medium leading-tight mt-2 italic">
+                            Délai avant qu'un parrain recommande
+                        </p>
+                    </div>
+
+                    {/* Metric: Godchildren Count */}
+                    <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
+                        <div>
+                            <p className="text-[10px] text-zinc-400 font-black uppercase tracking-widest mb-1">Volume Parrainage</p>
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-3xl font-black text-zinc-900">
+                                    {filteredSales.filter(s => s.type === 'P').length}
+                                </span>
+                                <span className="text-sm font-bold text-zinc-400">ventes</span>
+                            </div>
+                        </div>
+                        <p className="text-[10px] text-zinc-400 font-medium leading-tight mt-2 italic">
+                            Nombre total de ventes par recommandation
+                        </p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Leaderboard Chart */}
+                    <div className="lg:col-span-2 bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-sm font-black text-zinc-900 uppercase tracking-widest">Top 10 des Meilleurs Parrains</h3>
+                            <Award className="text-zinc-200" size={20} />
+                        </div>
+                        <div className="h-[300px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={referralLeaderboard} layout="vertical" margin={{ left: 40, right: 30 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f4f4f5" />
+                                    <XAxis type="number" hide />
+                                    <YAxis
+                                        dataKey="name"
+                                        type="category"
+                                        tick={{ fill: '#18181b', fontSize: 11, fontWeight: 700 }}
+                                        width={100}
+                                    />
+                                    <Tooltip
+                                        cursor={{ fill: '#f4f4f5' }}
+                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                        formatter={(value: any) => [`${value.toLocaleString()} €`, 'CA Apporté']}
+                                    />
+                                    <Bar dataKey="totalCA" fill="#18181b" radius={[0, 6, 6, 0]} barSize={24} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* Leaderboard List/Details */}
+                    <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm overflow-hidden flex flex-col">
+                        <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-4">Détails Classement</h3>
+                        <div className="space-y-3 flex-1 overflow-y-auto pr-2">
+                            {referralLeaderboard.map((item, index) => (
+                                <div key={item.name} className="flex items-center justify-between p-3 rounded-xl bg-zinc-50 border border-zinc-100">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${index === 0 ? 'bg-zinc-900 text-white shadow-md' : 'bg-white text-zinc-400 border border-zinc-200'
+                                            }`}>
+                                            {index + 1}
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-black text-zinc-900">{item.name}</p>
+                                            <p className="text-[9px] text-zinc-400 font-bold uppercase">{item.godchildrenCount} recommandation(s)</p>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs font-black text-zinc-900">{Math.round(item.totalCA / 1000)}k€</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             {/* Advanced Analytics Section */}
 
