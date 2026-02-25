@@ -149,7 +149,7 @@ const Analysis: React.FC = () => {
 
         filteredSales.forEach(s => {
             const parrainName = s.parrain?.trim();
-            if (parrainName && parrainName !== 'SO' && parrainName !== '') {
+            if (parrainName && parrainName.toUpperCase() !== 'X' && parrainName !== 'SO' && parrainName !== '') {
                 if (!sponsors[parrainName]) {
                     sponsors[parrainName] = { name: parrainName, godchildrenCount: 0, totalCA: 0 };
                 }
