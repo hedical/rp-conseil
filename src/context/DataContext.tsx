@@ -119,17 +119,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } as Client & { _latestSaleDate: Date | null };
         });
 
-        // Sort by latest sale date (descending)
+        // Sort by entry date (descending)
         return enhancedClients.sort((a, b) => {
-            const dateA = a._latestSaleDate?.getTime() || 0;
-            const dateB = b._latestSaleDate?.getTime() || 0;
+            const dateA = a.date_entree ? new Date(a.date_entree).getTime() : 0;
+            const dateB = b.date_entree ? new Date(b.date_entree).getTime() : 0;
 
             if (dateB !== dateA) return dateB - dateA;
 
-            // Fallback to entry date or created_at
-            const entryA = a.date_entree ? new Date(a.date_entree).getTime() : 0;
-            const entryB = b.date_entree ? new Date(b.date_entree).getTime() : 0;
-            return entryB - entryA;
+            // Fallback to latest sale date
+            const saleA = a._latestSaleDate?.getTime() || 0;
+            const saleB = b._latestSaleDate?.getTime() || 0;
+            return saleB - saleA;
         });
     }, [sales, clientsState]);
 

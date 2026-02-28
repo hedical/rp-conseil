@@ -63,7 +63,7 @@ export const fetchClientsData = async (): Promise<Client[]> => {
     const { data, error } = await supabase
         .from('clients')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('date_entree', { ascending: false });
 
     if (error) {
         console.error('Error fetching clients:', error);

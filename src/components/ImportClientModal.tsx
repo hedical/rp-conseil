@@ -15,11 +15,14 @@ const ImportClientModal: React.FC<ImportClientModalProps> = ({ isOpen, onClose, 
     const [nom, setNom] = useState(initialNom || '');
     const [prenom, setPrenom] = useState(initialPrenom || '');
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+    const [selectedDocs, setSelectedDocs] = useState<File[]>([]);
+    const [commentaires, setCommentaires] = useState('');
     const [previews, setPreviews] = useState<string[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [errorMessage, setErrorMessage] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const docInputRef = useRef<HTMLInputElement>(null);
 
     // Sync state if props change
     React.useEffect(() => {
@@ -44,10 +47,21 @@ const ImportClientModal: React.FC<ImportClientModalProps> = ({ isOpen, onClose, 
         setPreviews(prev => prev.filter((_, i) => i !== index));
     };
 
+    const handleDocChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const filesArray = Array.from(e.target.files);
+            setSelectedDocs(prev => [...prev, ...filesArray]);
+        }
+    };
+
+    const removeDoc = (index: number) => {
+        setSelectedDocs(prev => prev.filter((_, i) => i !== index));
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!nom || !prenom || selectedFiles.length === 0) {
-            setErrorMessage("Veuillez remplir tous les champs et ajouter au moins un fichier.");
+        if (!nom || !prenom || (selectedFiles.length === 0 && selectedDocs.length === 0 && !commentaires.trim())) {
+            setErrorMessage("Veuillez remplir le nom, le prénom et ajouter au moins un élément (photo, document ou commentaire).");
             setStatus('error');
             return;
         }
@@ -56,41 +70,88 @@ const ImportClientModal: React.FC<ImportClientModalProps> = ({ isOpen, onClose, 
         setStatus('idle');
         setErrorMessage('');
 
-        const formData = new FormData();
-        formData.append('id', clientId || ''); // Send ID (empty if list page)
-        formData.append('nom', nom);
-        formData.append('prenom', prenom);
-
-        // The user specifically asked for the file field name to be 'data'
-        selectedFiles.forEach(file => {
-            formData.append('data', file);
-        });
-
         try {
-            const response = await fetch('https://databuildr.app.n8n.cloud/webhook/clients-picture-upload', {
-                method: 'POST',
-                headers: {
-                    'X-RP-Password': password || ''
-                },
-                body: formData,
-            });
+            // 1. Send Comment
+            if (commentaires.trim()) {
+                const commentData = new FormData();
+                commentData.append('id', clientId || '');
+                commentData.append('nom', nom);
+                commentData.append('prenom', prenom);
+                commentData.append('type', 'commentaire');
+                commentData.append('content', commentaires);
 
-            if (response.ok) {
-                setStatus('success');
-                setTimeout(() => {
-                    handleClose();
-                }, 2000);
-            } else {
-                const text = await response.text();
-                if (text.includes('Wrong password')) {
-                    throw new Error("Mot de passe incorrect pour le webhook.");
+                const commentRes = await fetch('https://databuildr.app.n8n.cloud/webhook/clients-info-upload', {
+                    method: 'POST',
+                    headers: { 'X-RP-Password': password || '' },
+                    body: commentData
+                });
+
+                const responseText = await commentRes.text();
+                if (!commentRes.ok) {
+                    if (responseText.includes('Wrong password')) throw new Error("Mot de passe incorrect pour le webhook infos.");
+                    throw new Error(`Erreur serveur infos: ${commentRes.status}`);
                 }
-                throw new Error(`Erreur serveur: ${response.status}`);
             }
-        } catch (err) {
+
+            // 2. Send PDFs (One by One)
+            for (const doc of selectedDocs) {
+                const docData = new FormData();
+                docData.append('id', clientId || '');
+                docData.append('nom', nom);
+                docData.append('prenom', prenom);
+                docData.append('type', 'pdf');
+                docData.append('data', doc);
+
+                const docRes = await fetch('https://databuildr.app.n8n.cloud/webhook/clients-info-upload', {
+                    method: 'POST',
+                    headers: { 'X-RP-Password': password || '' },
+                    body: docData
+                });
+
+                const responseText = await docRes.text();
+                if (!docRes.ok) {
+                    if (responseText.includes('Wrong password')) throw new Error("Mot de passe incorrect pour le webhook PDF.");
+                    throw new Error(`Erreur serveur PDF: ${docRes.status}`);
+                }
+            }
+
+            // 3. Send Images (Together) to existing webhook
+            if (selectedFiles.length > 0) {
+                const formData = new FormData();
+                formData.append('id', clientId || '');
+                formData.append('nom', nom);
+                formData.append('prenom', prenom);
+
+                selectedFiles.forEach(file => {
+                    formData.append('data', file);
+                });
+
+                if (commentaires.trim()) {
+                    formData.append('infos_complementaires', commentaires);
+                }
+
+                const response = await fetch('https://databuildr.app.n8n.cloud/webhook/clients-picture-upload', {
+                    method: 'POST',
+                    headers: { 'X-RP-Password': password || '' },
+                    body: formData,
+                });
+
+                const responseText = await response.text();
+                if (!response.ok) {
+                    if (responseText.includes('Wrong password')) throw new Error("Mot de passe incorrect pour le webhook d'images.");
+                    throw new Error(`Erreur serveur images: ${response.status}`);
+                }
+            }
+
+            setStatus('success');
+            setTimeout(() => {
+                handleClose();
+            }, 2000);
+
+        } catch (err: any) {
             console.error("Upload error:", err);
             setStatus('error');
-            setErrorMessage("Impossible d'envoyer les fichiers. Vérifiez votre connexion.");
+            setErrorMessage(err.message || "Impossible d'envoyer les fichiers. Vérifiez votre connexion.");
         } finally {
             setIsSubmitting(false);
         }
@@ -101,7 +162,9 @@ const ImportClientModal: React.FC<ImportClientModalProps> = ({ isOpen, onClose, 
         previews.forEach(url => URL.revokeObjectURL(url));
         setNom('');
         setPrenom('');
+        setCommentaires('');
         setSelectedFiles([]);
+        setSelectedDocs([]);
         setPreviews([]);
         setStatus('idle');
         setIsSubmitting(false);
@@ -169,7 +232,7 @@ const ImportClientModal: React.FC<ImportClientModalProps> = ({ isOpen, onClose, 
                     </div>
 
                     <div className="space-y-2">
-                        <label className="text-sm font-semibold text-zinc-700 ml-1">Fichiers (Images)</label>
+                        <label className="text-sm font-semibold text-zinc-700 ml-1">Photos des fiches R1 (Images)</label>
                         <div
                             onClick={() => fileInputRef.current?.click()}
                             className="border-2 border-dashed border-zinc-200 rounded-2xl p-8 flex flex-col items-center justify-center gap-3 hover:border-zinc-900 hover:bg-zinc-50 transition-all cursor-pointer group"
@@ -217,6 +280,65 @@ const ImportClientModal: React.FC<ImportClientModalProps> = ({ isOpen, onClose, 
                         </div>
                     )}
 
+                    <div className="space-y-1.5">
+                        <label className="text-sm font-semibold text-zinc-700 ml-1">Commentaires</label>
+                        <textarea
+                            value={commentaires}
+                            onChange={(e) => setCommentaires(e.target.value)}
+                            rows={3}
+                            className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-zinc-900 focus:border-black transition-all outline-none text-zinc-900 resize-none"
+                            placeholder="Saisissez vos commentaires ici..."
+                        />
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-sm font-semibold text-zinc-700 ml-1">Documents complémentaires (PDF)</label>
+                        <div
+                            onClick={() => docInputRef.current?.click()}
+                            className="border-2 border-dashed border-zinc-200 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 hover:border-zinc-900 hover:bg-zinc-50 transition-all cursor-pointer group"
+                        >
+                            <div className="w-10 h-10 bg-zinc-100 rounded-full flex items-center justify-center text-zinc-400 group-hover:text-zinc-900 group-hover:scale-110 transition-all">
+                                <Upload size={20} />
+                            </div>
+                            <div className="text-center">
+                                <span className="text-sm font-bold text-zinc-900">Cliquez pour ajouter des PDF</span>
+                            </div>
+                            <input
+                                type="file"
+                                ref={docInputRef}
+                                onChange={handleDocChange}
+                                className="hidden"
+                                multiple
+                                accept="application/pdf"
+                            />
+                        </div>
+                    </div>
+
+                    {selectedDocs.length > 0 && (
+                        <div className="max-h-40 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                            {selectedDocs.map((doc, index) => (
+                                <div key={index} className="flex items-center justify-between p-3 bg-zinc-50 rounded-xl border border-zinc-100 group">
+                                    <div className="flex items-center gap-3 overflow-hidden">
+                                        <div className="w-10 h-10 bg-zinc-200 rounded-lg flex items-center justify-center text-zinc-500 shrink-0 font-bold text-xs uppercase">
+                                            PDF
+                                        </div>
+                                        <div className="overflow-hidden">
+                                            <p className="text-sm font-bold text-zinc-900 truncate">{doc.name}</p>
+                                            <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-tighter">{(doc.size / 1024).toFixed(1)} KB</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => removeDoc(index)}
+                                        className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     <div className="pt-2 flex gap-3">
                         <button
                             type="button"
@@ -228,7 +350,7 @@ const ImportClientModal: React.FC<ImportClientModalProps> = ({ isOpen, onClose, 
                         </button>
                         <button
                             type="submit"
-                            disabled={isSubmitting || selectedFiles.length === 0}
+                            disabled={isSubmitting || (selectedFiles.length === 0 && selectedDocs.length === 0 && !commentaires.trim())}
                             className="flex-[2] py-4 bg-zinc-900 text-white rounded-xl font-bold hover:bg-zinc-800 transition-all shadow-xl hover:shadow-zinc-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                             {isSubmitting ? (

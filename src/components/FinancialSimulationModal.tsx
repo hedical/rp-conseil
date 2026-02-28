@@ -37,14 +37,31 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
             } else {
                 extracted = raw;
             }
-            return typeof extracted === 'string' ? extracted.replace(/\\n/g, '\n') : String(extracted);
+
+            let result = typeof extracted === 'string' ? extracted.replace(/\\n/g, '\n') : String(extracted);
+            result = result.replace(/^```[a-z]*\s*\n/i, '').replace(/\n```\s*$/m, '');
+            result = result.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/m, '');
+            return result;
         } catch {
-            return raw.replace(/\\n/g, '\n');
+            let result = raw.replace(/\\n/g, '\n');
+            result = result.replace(/^```[a-z]*\s*\n/i, '').replace(/\n```\s*$/m, '');
+            result = result.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/m, '');
+            return result;
         }
     };
 
     const [simulationResult, setSimulationResult] = useState<string | null>(cleanMarkdown(client.simulation_1) || null);
     const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
+    // Helper to detect HTML
+    const isHtml = (text: string | null): boolean => {
+        if (!text) return false;
+        const htmlRegex = /<\/?(html|body|div|span|h[1-6]|p|a|ul|li|table|tr|td|th|strong|em|br|hr)[^>]*>/i;
+        return htmlRegex.test(text);
+    };
+
+    // View mode state
+    const [viewMode, setViewMode] = useState<'preview' | 'edit'>(isHtml(cleanMarkdown(client.simulation_1)) ? 'preview' : 'edit');
 
     // Restitution specific state
     const [isRestituting, setIsRestituting] = useState(false);
@@ -89,7 +106,8 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
                         observations: client.autres_observations,
                         analyse: client.analyse_profil,
                         capa_epargne: client.capacite_epargne,
-                        capa_emprunt: client.capacite_emprunt
+                        capa_emprunt: client.capacite_emprunt,
+                        infos_complementaires: client.infos_complementaires
                     }
                 }),
             });
@@ -115,6 +133,10 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
 
     const handleRestitution = async () => {
         if (!simulationResult) return;
+
+        // Even if we suspect it's already HTML, we hit the webhook to improve it
+        // Or if we need a fresh render.
+        // We removed the automatic return here.
 
         setIsRestituting(true);
         setRestitutionError(null);
@@ -149,6 +171,7 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
                     }
 
                     setRestitutionHtml(String(htmlContent));
+                    setViewMode('preview');
                 } catch (e) {
                     if (text && text.trim() !== "") {
                         setRestitutionHtml(text);
@@ -262,7 +285,7 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
                                     <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Mis à jour le {new Date().toLocaleDateString('fr-FR')}</p>
                                 </div>
                                 <div className="flex flex-wrap gap-2 w-full lg:w-auto">
-                                    {!restitutionHtml && (
+                                    {viewMode === 'edit' && (
                                         <button
                                             onClick={handleSaveModifications}
                                             disabled={isSaving}
@@ -283,15 +306,17 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
                                         {isRestituting ? (
                                             <><Loader className="animate-spin" size={16} /> Rendu...</>
                                         ) : (
-                                            <><Download size={16} /> {restitutionHtml ? 'Actualiser' : 'Visualiser'}</>
+                                            <><Download size={16} /> Visualiser</>
                                         )}
                                     </button>
                                     <button
                                         onClick={() => {
                                             if (window.confirm("Êtes-vous sûr ? Vos modifications non sauvegardées seront perdues.")) {
-                                                setSimulationResult(null);
+                                                const original = cleanMarkdown(client.simulation_1) || null;
+                                                setSimulationResult(original);
                                                 setRestitutionHtml(null);
                                                 setStatus('idle');
+                                                setViewMode(isHtml(original) ? 'preview' : 'edit');
                                             }
                                         }}
                                         className="flex-1 md:flex-none px-4 py-3 text-zinc-400 hover:text-zinc-900 text-[10px] font-black uppercase tracking-widest transition-colors text-center"
@@ -308,28 +333,69 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
                                 </div>
                             )}
 
-                            {restitutionHtml ? (
+                            {viewMode === 'preview' ? (
                                 <div className="bg-white shadow-xl rounded-3xl border border-zinc-200 overflow-hidden animate-in zoom-in-95 duration-500">
                                     <div className="flex justify-between items-center p-4 md:p-6 bg-zinc-50/50 border-b border-zinc-100">
-                                        <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em]">Visualisation Client</h4>
-                                        <button
-                                            onClick={() => setRestitutionHtml(null)}
-                                            className="text-[10px] font-black text-zinc-900 hover:text-zinc-600 transition-colors uppercase tracking-widest underline decoration-2 underline-offset-4"
-                                        >
-                                            Mode Édition
-                                        </button>
+                                        <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] flex-1">Visualisation Client</h4>
+                                        <div className="flex gap-4 items-center">
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        const response = await fetch('https://databuildr.app.n8n.cloud/webhook/render', {
+                                                            method: 'POST',
+                                                            headers: {
+                                                                'Content-Type': 'application/json',
+                                                                'X-RP-Password': password || ''
+                                                            },
+                                                            body: JSON.stringify({
+                                                                message: simulationResult,
+                                                                format: 'pdf'
+                                                            }),
+                                                        });
+
+                                                        if (!response.ok) throw new Error("Erreur lors de la génération du PDF");
+
+                                                        const blob = await response.blob();
+                                                        const url = window.URL.createObjectURL(blob);
+                                                        const a = document.createElement('a');
+                                                        a.href = url;
+                                                        a.download = `Simulation_${client.nom.replace(/\s+/g, '_')}.pdf`;
+                                                        document.body.appendChild(a);
+                                                        a.click();
+                                                        a.remove();
+                                                        window.URL.revokeObjectURL(url);
+                                                    } catch (err) {
+                                                        console.error("PDF generation error:", err);
+                                                        alert("Erreur lors de la génération du PDF.");
+                                                    }
+                                                }}
+                                                className="text-[10px] font-black text-zinc-900 hover:text-zinc-600 transition-colors uppercase tracking-widest flex items-center gap-1.5"
+                                            >
+                                                <Download size={12} />
+                                                Télécharger en PDF
+                                            </button>
+                                            <span className="text-zinc-300">|</span>
+                                            <button
+                                                onClick={() => setViewMode('edit')}
+                                                className="text-[10px] font-black text-zinc-900 hover:text-zinc-600 transition-colors uppercase tracking-widest underline decoration-2 underline-offset-4"
+                                            >
+                                                Mode Édition
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="p-6 md:p-12 lg:p-16 overflow-x-auto scrollbar-hide">
                                         <div
-                                            className={`min-h-[400px] prose prose-zinc max-w-none ${restitutionHtml.trim().startsWith('<') ? '' : 'whitespace-pre-wrap font-serif text-base md:text-lg leading-relaxed text-zinc-800'}`}
-                                            dangerouslySetInnerHTML={{ __html: restitutionHtml }}
+                                            className={`min-h-[400px] prose prose-zinc max-w-none ${(restitutionHtml || simulationResult || '').trim().startsWith('<') ? '' : 'whitespace-pre-wrap font-serif text-base md:text-lg leading-relaxed text-zinc-800'}`}
+                                            dangerouslySetInnerHTML={{ __html: restitutionHtml || simulationResult || '' }}
                                         />
                                     </div>
                                 </div>
                             ) : (
                                 <div className="bg-zinc-50 rounded-2xl border border-zinc-200 overflow-hidden shadow-inner">
                                     <div className="bg-zinc-100/50 px-5 py-2.5 border-b border-zinc-200 flex justify-between items-center">
-                                        <h4 className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Éditeur Markdown</h4>
+                                        <h4 className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">
+                                            {isHtml(simulationResult) ? 'Éditeur HTML' : 'Éditeur Markdown'}
+                                        </h4>
                                         <div className="flex gap-1">
                                             <div className="w-1.5 h-1.5 rounded-full bg-zinc-300"></div>
                                             <div className="w-1.5 h-1.5 rounded-full bg-zinc-300"></div>

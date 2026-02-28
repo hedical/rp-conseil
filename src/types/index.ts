@@ -46,6 +46,7 @@ export interface Client {
     capacite_epargne: string | null;
     capacite_emprunt: string | null;
     analyse_profil: string | null;
+    infos_complementaires?: string | null;
     sales?: Sale[];
     totalCA: number;
     totalCAPerso: number;
