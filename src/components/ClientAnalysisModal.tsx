@@ -3,6 +3,7 @@ import { X, Users, Info, FileText, ChevronRight, Download, Loader, CheckCircle2,
 import { useData } from '../hooks/useData';
 import { updateClientData } from '../services/api';
 import type { Client } from '../types';
+import toast from 'react-hot-toast';
 
 interface ClientAnalysisModalProps {
     isOpen: boolean;
@@ -56,6 +57,7 @@ const ClientAnalysisModal: React.FC<ClientAnalysisModalProps> = ({ isOpen, onClo
     const handleRestitution = async () => {
         setIsRestituting(true);
         setRestitutionStatus('idle');
+        const toastId = toast.loading("⏳ Bilan en cours de génération...", { duration: 60000 });
 
         // Filter only the fields displayed in the modal
         const filteredClient = {
@@ -74,7 +76,7 @@ const ClientAnalysisModal: React.FC<ClientAnalysisModalProps> = ({ isOpen, onClo
         };
 
         try {
-            const response = await fetch('https://databuildr.app.n8n.cloud/webhook/render', {
+            const response = await fetch('/webhook/render', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -87,15 +89,35 @@ const ClientAnalysisModal: React.FC<ClientAnalysisModalProps> = ({ isOpen, onClo
 
             if (response.ok) {
                 const text = await response.text();
+                let finalHtml = text;
                 try {
                     // Try parsing as JSON first in case it's wrapped
                     const data = JSON.parse(text);
-                    setRestitutionHtml(data.content || data.message || data.html || text);
+                    finalHtml = data.content || data.message || data.html || text;
                 } catch {
                     // It's raw HTML
-                    setRestitutionHtml(text);
                 }
+                
                 setRestitutionStatus('success');
+                
+                toast.success(
+                    (t) => (
+                        <div className="flex flex-col gap-2">
+                            <span className="font-bold">✅ Bilan prêt !</span>
+                            <button
+                                onClick={() => {
+                                    setRestitutionHtml(finalHtml);
+                                    toast.dismiss(t.id);
+                                }}
+                                className="text-xs w-full py-1.5 px-4 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 transition-colors"
+                            >
+                                Consulter le document
+                            </button>
+                        </div>
+                    ),
+                    { id: toastId, duration: 15000 }
+                );
+
             } else {
                 const text = await response.text();
                 if (text.includes('Wrong password')) {
@@ -103,9 +125,10 @@ const ClientAnalysisModal: React.FC<ClientAnalysisModalProps> = ({ isOpen, onClo
                 }
                 throw new Error(`Erreur: ${response.status}`);
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error("Restitution error:", err);
             setRestitutionStatus('error');
+            toast.error(`❌ Erreur: ${err.message}`, { id: toastId });
             setTimeout(() => setRestitutionStatus('idle'), 4000);
         } finally {
             setIsRestituting(false);
@@ -183,17 +206,54 @@ const ClientAnalysisModal: React.FC<ClientAnalysisModalProps> = ({ isOpen, onClo
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                             <div className="flex justify-between items-center mb-6">
                                 <h3 className="text-lg font-black text-zinc-900">Aperçu du Bilan Généré</h3>
-                                <button
-                                    onClick={() => setRestitutionHtml(null)}
-                                    className="text-sm font-bold text-zinc-500 hover:text-zinc-900 flex items-center gap-1"
-                                >
-                                    <ArrowLeft size={14} /> Retour au diagnostic
-                                </button>
+                                <div className="flex items-center gap-4">
+                                    <button
+                                        onClick={() => {
+                                            try {
+                                                const toastId = toast.loading("⏳ Préparation de l'impression...");
+                                                
+                                                const blob = new Blob([restitutionHtml], { type: 'text/html;charset=utf-8' });
+                                                const url = URL.createObjectURL(blob);
+                                                const iframe = document.createElement('iframe');
+                                                iframe.style.display = 'none';
+                                                iframe.src = url;
+                                                document.body.appendChild(iframe);
+                                                
+                                                iframe.onload = () => {
+                                                    toast.dismiss(toastId);
+                                                    setTimeout(() => {
+                                                        iframe.contentWindow?.focus();
+                                                        iframe.contentWindow?.print();
+                                                        // Cleanup after print dialog is closed
+                                                        setTimeout(() => {
+                                                            document.body.removeChild(iframe);
+                                                            URL.revokeObjectURL(url);
+                                                        }, 2000);
+                                                    }, 500); // Give fonts a moment to process
+                                                };
+                                            } catch (err) {
+                                                console.error("Print generation error:", err);
+                                                toast.error("❌ Erreur lors de la génération de l'impression.");
+                                            }
+                                        }}
+                                        className="text-sm font-bold text-zinc-900 hover:text-zinc-600 flex items-center gap-2 px-4 py-2 bg-zinc-100 rounded-lg transition-colors"
+                                    >
+                                        <Download size={16} /> Imprimer / Sauvegarder en PDF
+                                    </button>
+                                    <button
+                                        onClick={() => setRestitutionHtml(null)}
+                                        className="text-sm font-bold text-zinc-500 hover:text-zinc-900 flex items-center gap-1"
+                                    >
+                                        <ArrowLeft size={14} /> Retour au diagnostic
+                                    </button>
+                                </div>
                             </div>
-                            <div
-                                className={`bg-white shadow-xl rounded-2xl border border-zinc-200 p-8 mx-auto max-w-4xl min-h-[600px] overflow-hidden ${restitutionHtml.trim().startsWith('<') ? '' : 'whitespace-pre-wrap font-serif text-lg leading-relaxed text-zinc-800'}`}
-                                dangerouslySetInnerHTML={{ __html: restitutionHtml }}
-                            />
+                            <div>
+                                <div
+                                    className={`bg-white shadow-xl rounded-2xl border border-zinc-200 p-8 mx-auto max-w-4xl min-h-[600px] overflow-hidden ${restitutionHtml.trim().startsWith('<') ? '' : 'whitespace-pre-wrap font-serif text-lg leading-relaxed text-zinc-800'}`}
+                                    dangerouslySetInnerHTML={{ __html: restitutionHtml }}
+                                />
+                            </div>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

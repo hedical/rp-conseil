@@ -9,4 +9,13 @@ export default defineConfig({
     tailwindcss(),
   ],
   base: './', // Use relative paths for GitHub Pages compatibility
+  server: {
+    proxy: {
+      '/webhook': {
+        target: 'https://databuildr.app.n8n.cloud',
+        changeOrigin: true,
+        secure: true,
+      }
+    }
+  }
 })

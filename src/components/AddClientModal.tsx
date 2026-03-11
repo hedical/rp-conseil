@@ -8,9 +8,10 @@ interface AddClientModalProps {
     isOpen: boolean;
     onClose: () => void;
     initialClientName?: string;
+    clientId?: string;
 }
 
-const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initialClientName }) => {
+const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initialClientName, clientId }) => {
     const { clients, refetchData, products } = useData();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -58,6 +59,7 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initia
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        console.log("Submitting form", { clientNom, newSale });
 
         if (!clientNom || !newSale.produit) {
             setError("Le nom et le produit sont obligatoires.");
@@ -68,26 +70,37 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initia
         setError(null);
 
         try {
-            let clientId: string;
+            console.log("Checking if client exists...");
+            let resolvedClientId: string = clientId || '';
 
-            // 1. Find or create client
-            const existingClient = clients.find(c => c.nom.toLowerCase() === clientNom.toLowerCase());
+            if (!resolvedClientId) {
+                // 1. Find or create client (Fallback for the main list where clientId isn't provided)
+                const existingClient = clients.find(c => c.nom?.toLowerCase() === clientNom.toLowerCase());
+                console.log("Existing client:", existingClient);
 
-            if (existingClient) {
-                clientId = existingClient.id;
-            } else {
-                clientId = await createClient({ nom: clientNom });
+                if (existingClient) {
+                    resolvedClientId = existingClient.id;
+                } else {
+                    console.log("Creating new client...");
+                    resolvedClientId = await createClient({ nom: clientNom });
+                }
             }
+
+            console.log("Resolved clientId:", resolvedClientId);
 
             // 2. Create the sale
             const saleToSubmit: Partial<Sale> = {
                 ...newSale,
-                client_id: clientId
+                client_id: resolvedClientId
             };
 
+            console.log("Calling createSaleData:", saleToSubmit);
             await createSaleData(saleToSubmit);
+            
+            console.log("Refetching data...");
             await refetchData();
 
+            console.log("Closing modal...");
             onClose();
             // Reset form
             setNewSale({
@@ -154,7 +167,6 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, initia
                                 onChange={(e) => handleChange('nom', e.target.value)}
                                 className={`w-full p-3 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-zinc-900 focus:border-black transition-all ${initialClientName ? 'bg-zinc-100 text-zinc-500 cursor-not-allowed' : ''}`}
                                 placeholder="ex: DUPONT Jean"
-                                required
                                 disabled={!!initialClientName}
                             />
                         </div>

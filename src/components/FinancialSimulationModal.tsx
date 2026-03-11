@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { X, Calculator, Loader, FileText, Send, Download, Save } from 'lucide-react';
 import { useData } from '../hooks/useData';
 import { updateClientSimulation } from '../services/api';
 import type { Client } from '../types';
+import toast from 'react-hot-toast';
+
 
 interface FinancialSimulationModalProps {
     isOpen: boolean;
@@ -15,6 +17,9 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
     const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
     const [isSimulating, setIsSimulating] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    
+    // Ref for the HTML content to be converted to PDF
+    const printRef = useRef<HTMLDivElement>(null);
 
     // Helper to clean markdown from JSON or literal \n
     const cleanMarkdown = (raw: string | null): string | null => {
@@ -81,7 +86,7 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
         setRestitutionHtml(null);
 
         try {
-            const response = await fetch('https://databuildr.app.n8n.cloud/webhook/simulation-rpconseil', {
+            const response = await fetch('/webhook/simulation-rpconseil', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -134,15 +139,13 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
     const handleRestitution = async () => {
         if (!simulationResult) return;
 
-        // Even if we suspect it's already HTML, we hit the webhook to improve it
-        // Or if we need a fresh render.
-        // We removed the automatic return here.
-
         setIsRestituting(true);
         setRestitutionError(null);
+        
+        const toastId = toast.loading(`⏳ Mise en page de la restitution en cours...`);
 
         try {
-            const response = await fetch('https://databuildr.app.n8n.cloud/webhook/render', {
+            const response = await fetch('/webhook/render', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -171,10 +174,44 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
                     }
 
                     setRestitutionHtml(String(htmlContent));
-                    setViewMode('preview');
+                    
+                    toast.success(
+                        (t) => (
+                            <div className="flex flex-col gap-2">
+                                <span className="font-bold">✅ Restitution prête !</span>
+                                <button
+                                    onClick={() => {
+                                        setViewMode('preview');
+                                        toast.dismiss(t.id);
+                                    }}
+                                    className="text-xs w-full py-1.5 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 transition-colors"
+                                >
+                                    Ouvrir le document
+                                </button>
+                            </div>
+                        ),
+                        { id: toastId, duration: 8000 }
+                    );
                 } catch (e) {
                     if (text && text.trim() !== "") {
                         setRestitutionHtml(text);
+                        toast.success(
+                            (t) => (
+                                <div className="flex flex-col gap-2">
+                                    <span className="font-bold">✅ Restitution prête !</span>
+                                    <button
+                                        onClick={() => {
+                                            setViewMode('preview');
+                                            toast.dismiss(t.id);
+                                        }}
+                                        className="text-xs w-full py-1.5 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 transition-colors"
+                                    >
+                                        Ouvrir le document
+                                    </button>
+                                </div>
+                            ),
+                            { id: toastId, duration: 8000 }
+                        );
                     } else {
                         throw new Error("Réponse vide ou invalide du serveur de rendu.");
                     }
@@ -185,6 +222,7 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
         } catch (err: any) {
             console.error("Restitution error:", err);
             setRestitutionError(err.message || "Échec du rendu HTML.");
+            toast.error(`❌ Erreur lors du rendu: ${err.message}`, { id: toastId });
         } finally {
             setIsRestituting(false);
         }
@@ -306,7 +344,7 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
                                         {isRestituting ? (
                                             <><Loader className="animate-spin" size={16} /> Rendu...</>
                                         ) : (
-                                            <><Download size={16} /> Visualiser</>
+                                            <><Download size={16} /> Restitution</>
                                         )}
                                     </button>
                                     <button
@@ -339,40 +377,37 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
                                         <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] flex-1">Visualisation Client</h4>
                                         <div className="flex gap-4 items-center">
                                             <button
-                                                onClick={async () => {
+                                                onClick={() => {
                                                     try {
-                                                        const response = await fetch('https://databuildr.app.n8n.cloud/webhook/render', {
-                                                            method: 'POST',
-                                                            headers: {
-                                                                'Content-Type': 'application/json',
-                                                                'X-RP-Password': password || ''
-                                                            },
-                                                            body: JSON.stringify({
-                                                                message: simulationResult,
-                                                                format: 'pdf'
-                                                            }),
-                                                        });
-
-                                                        if (!response.ok) throw new Error("Erreur lors de la génération du PDF");
-
-                                                        const blob = await response.blob();
-                                                        const url = window.URL.createObjectURL(blob);
-                                                        const a = document.createElement('a');
-                                                        a.href = url;
-                                                        a.download = `Simulation_${client.nom.replace(/\s+/g, '_')}.pdf`;
-                                                        document.body.appendChild(a);
-                                                        a.click();
-                                                        a.remove();
-                                                        window.URL.revokeObjectURL(url);
+                                                        const toastId = toast.loading("⏳ Préparation de l'impression...");
+                                                        
+                                                        const blob = new Blob([restitutionHtml || simulationResult || ''], { type: 'text/html;charset=utf-8' });
+                                                        const url = URL.createObjectURL(blob);
+                                                        const iframe = document.createElement('iframe');
+                                                        iframe.style.display = 'none';
+                                                        iframe.src = url;
+                                                        document.body.appendChild(iframe);
+                                                        
+                                                        iframe.onload = () => {
+                                                            toast.dismiss(toastId);
+                                                            setTimeout(() => {
+                                                                iframe.contentWindow?.focus();
+                                                                iframe.contentWindow?.print();
+                                                                setTimeout(() => {
+                                                                    document.body.removeChild(iframe);
+                                                                    URL.revokeObjectURL(url);
+                                                                }, 2000);
+                                                            }, 500);
+                                                        };
                                                     } catch (err) {
-                                                        console.error("PDF generation error:", err);
-                                                        alert("Erreur lors de la génération du PDF.");
+                                                        console.error("Print generation error:", err);
+                                                        toast.error("❌ Erreur lors de la génération de l'impression.");
                                                     }
                                                 }}
                                                 className="text-[10px] font-black text-zinc-900 hover:text-zinc-600 transition-colors uppercase tracking-widest flex items-center gap-1.5"
                                             >
                                                 <Download size={12} />
-                                                Télécharger en PDF
+                                                Imprimer / Sauvegarder en PDF
                                             </button>
                                             <span className="text-zinc-300">|</span>
                                             <button
@@ -384,18 +419,18 @@ const FinancialSimulationModal: React.FC<FinancialSimulationModalProps> = ({ isO
                                         </div>
                                     </div>
                                     <div className="p-6 md:p-12 lg:p-16 overflow-x-auto scrollbar-hide">
-                                        <div
-                                            className={`min-h-[400px] prose prose-zinc max-w-none ${(restitutionHtml || simulationResult || '').trim().startsWith('<') ? '' : 'whitespace-pre-wrap font-serif text-base md:text-lg leading-relaxed text-zinc-800'}`}
-                                            dangerouslySetInnerHTML={{ __html: restitutionHtml || simulationResult || '' }}
-                                        />
+                                        <div ref={printRef}>
+                                            <div
+                                                className={`min-h-[400px] prose prose-zinc max-w-none ${(restitutionHtml || simulationResult || '').trim().startsWith('<') ? '' : 'whitespace-pre-wrap font-serif text-base md:text-lg leading-relaxed text-zinc-800'}`}
+                                                dangerouslySetInnerHTML={{ __html: restitutionHtml || simulationResult || '' }}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             ) : (
                                 <div className="bg-zinc-50 rounded-2xl border border-zinc-200 overflow-hidden shadow-inner">
                                     <div className="bg-zinc-100/50 px-5 py-2.5 border-b border-zinc-200 flex justify-between items-center">
-                                        <h4 className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">
-                                            {isHtml(simulationResult) ? 'Éditeur HTML' : 'Éditeur Markdown'}
-                                        </h4>
+                                        <h4 className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Éditeur Markdown</h4>
                                         <div className="flex gap-1">
                                             <div className="w-1.5 h-1.5 rounded-full bg-zinc-300"></div>
                                             <div className="w-1.5 h-1.5 rounded-full bg-zinc-300"></div>

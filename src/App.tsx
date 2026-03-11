@@ -38,10 +38,13 @@ function AppContent() {
   );
 }
 
+import { Toaster } from 'react-hot-toast';
+
 function App() {
   return (
     <DataProvider>
       <AppContent />
+      <Toaster position="bottom-right" />
     </DataProvider>
   );
 }

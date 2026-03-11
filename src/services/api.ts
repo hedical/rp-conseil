@@ -29,6 +29,7 @@ export const fetchSalesData = async (): Promise<Sale[]> => {
         console.error('Error fetching sales:', error);
         throw error;
     }
+    console.log("DEBUG: raw sales data from Supabase", data);
 
     return data.map((item: any) => ({
         id: item.id,

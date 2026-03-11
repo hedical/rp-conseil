@@ -27,6 +27,14 @@ const ClientDetail: React.FC = () => {
     // Find client
     const client = clients.find(c => c.id === id);
 
+    React.useEffect(() => {
+        if (client) {
+            console.log("DEBUG: Rendered ClientDetail for", client.nom);
+            console.log("DEBUG: Client sales array length:", client.sales?.length);
+            console.log("DEBUG: Client data:", client);
+        }
+    }, [client]);
+
     if (!client) {
         return <div className="p-8 text-center text-zinc-500">Client introuvable</div>;
     }
@@ -590,6 +598,7 @@ const ClientDetail: React.FC = () => {
                 isOpen={isAddProductModalOpen}
                 onClose={() => setIsAddProductModalOpen(false)}
                 initialClientName={client.nom}
+                clientId={client.id}
             />
 
             <ImportClientModal

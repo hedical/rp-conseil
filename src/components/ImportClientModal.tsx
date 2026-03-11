@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { X, Upload, Loader, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useData } from '../hooks/useData';
+import toast from 'react-hot-toast';
+import { Link } from 'react-router-dom';
 
 interface ImportClientModalProps {
     isOpen: boolean;
@@ -58,6 +60,9 @@ const ImportClientModal: React.FC<ImportClientModalProps> = ({ isOpen, onClose, 
         setSelectedDocs(prev => prev.filter((_, i) => i !== index));
     };
 
+
+
+// Inside ImportClientModal component
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!nom || !prenom || (selectedFiles.length === 0 && selectedDocs.length === 0 && !commentaires.trim())) {
@@ -70,55 +75,19 @@ const ImportClientModal: React.FC<ImportClientModalProps> = ({ isOpen, onClose, 
         setStatus('idle');
         setErrorMessage('');
 
+        // 1. Create a loading toast that will persist
+        const toastId = toast.loading(`Analyse en cours pour ${prenom} ${nom}...`);
+
         try {
-            // 1. Send Comment
-            if (commentaires.trim()) {
-                const commentData = new FormData();
-                commentData.append('id', clientId || '');
-                commentData.append('nom', nom);
-                commentData.append('prenom', prenom);
-                commentData.append('type', 'commentaire');
-                commentData.append('content', commentaires);
+            // Close modal early to avoid blocking UI
+            handleClose();
 
-                const commentRes = await fetch('https://databuildr.app.n8n.cloud/webhook/clients-info-upload', {
-                    method: 'POST',
-                    headers: { 'X-RP-Password': password || '' },
-                    body: commentData
-                });
-
-                const responseText = await commentRes.text();
-                if (!commentRes.ok) {
-                    if (responseText.includes('Wrong password')) throw new Error("Mot de passe incorrect pour le webhook infos.");
-                    throw new Error(`Erreur serveur infos: ${commentRes.status}`);
-                }
-            }
-
-            // 2. Send PDFs (One by One)
-            for (const doc of selectedDocs) {
-                const docData = new FormData();
-                docData.append('id', clientId || '');
-                docData.append('nom', nom);
-                docData.append('prenom', prenom);
-                docData.append('type', 'pdf');
-                docData.append('data', doc);
-
-                const docRes = await fetch('https://databuildr.app.n8n.cloud/webhook/clients-info-upload', {
-                    method: 'POST',
-                    headers: { 'X-RP-Password': password || '' },
-                    body: docData
-                });
-
-                const responseText = await docRes.text();
-                if (!docRes.ok) {
-                    if (responseText.includes('Wrong password')) throw new Error("Mot de passe incorrect pour le webhook PDF.");
-                    throw new Error(`Erreur serveur PDF: ${docRes.status}`);
-                }
-            }
-
-            // 3. Send Images (Together) to existing webhook
+            // 2. Run Picture Upload FIRST if there are images, to get the ID for a new client
+            let finalClientId = clientId;
+            
             if (selectedFiles.length > 0) {
                 const formData = new FormData();
-                formData.append('id', clientId || '');
+                if (finalClientId) formData.append('id', finalClientId);
                 formData.append('nom', nom);
                 formData.append('prenom', prenom);
 
@@ -130,28 +99,165 @@ const ImportClientModal: React.FC<ImportClientModalProps> = ({ isOpen, onClose, 
                     formData.append('infos_complementaires', commentaires);
                 }
 
-                const response = await fetch('https://databuildr.app.n8n.cloud/webhook/clients-picture-upload', {
+                const picRes = await fetch('/webhook/clients-picture-upload', {
                     method: 'POST',
                     headers: { 'X-RP-Password': password || '' },
                     body: formData,
                 });
 
-                const responseText = await response.text();
-                if (!response.ok) {
-                    if (responseText.includes('Wrong password')) throw new Error("Mot de passe incorrect pour le webhook d'images.");
-                    throw new Error(`Erreur serveur images: ${response.status}`);
+                if (!picRes.ok) {
+                    const text = await picRes.text();
+                    if (text.includes('Wrong password')) throw new Error("Mot de passe incorrect pour le webhook d'images.");
+                    throw new Error(`Erreur serveur images: ${picRes.status}`);
+                }
+
+                // If it's a new client, the webhook should return the new ID
+                if (!finalClientId) {
+                    try {
+                        const responseData = await picRes.json();
+                        // Assuming the webhook returns { id: "..." } or similar
+                        // You might need to adjust this depending on the exact response structure of the N8N webhook
+                        if (responseData.id) {
+                            finalClientId = responseData.id;
+                        } else if (Array.isArray(responseData) && responseData.length > 0 && responseData[0].id) {
+                            finalClientId = responseData[0].id;
+                        }
+                    } catch (e) {
+                        console.warn("Could not parse JSON from picture-upload response to get new client ID", e);
+                    }
                 }
             }
 
-            setStatus('success');
-            setTimeout(() => {
-                handleClose();
-            }, 2000);
+            // 3. Now run Info Uploads (Comments and PDFs) concurrently
+            const infoUploadPromises = [];
+
+            // Send Comment (if we didn't send it with the picture, or if we want to send it here specifically)
+            // Note: The previous logic sent comments with pictures IF there were pictures. 
+            // If there were NO pictures, it sent them here. We maintain that logic, OR send it if we just want to be sure.
+            // Let's send it only if there are NO pictures, to avoid duplicating the comment, since we appended it to the picture upload above.
+            if (commentaires.trim() && selectedFiles.length === 0) {
+                const commentData = new FormData();
+                if (finalClientId) commentData.append('id', finalClientId);
+                commentData.append('nom', nom);
+                commentData.append('prenom', prenom);
+                commentData.append('type', 'commentaire');
+                commentData.append('content', commentaires);
+
+                infoUploadPromises.push(
+                    fetch('/webhook/clients-info-upload', {
+                        method: 'POST',
+                        headers: { 'X-RP-Password': password || '' },
+                        body: commentData
+                    }).then(async res => {
+                        if (!res.ok) {
+                            const text = await res.text();
+                            if (text.includes('Wrong password')) throw new Error("Mot de passe incorrect pour le webhook infos.");
+                            throw new Error(`Erreur serveur infos: ${res.status}`);
+                        }
+                    })
+                );
+            }
+
+            // Send PDFs (One by One)
+            for (const doc of selectedDocs) {
+                const docData = new FormData();
+                if (finalClientId) docData.append('id', finalClientId);
+                docData.append('nom', nom);
+                docData.append('prenom', prenom);
+                docData.append('type', 'pdf');
+                docData.append('data', doc);
+
+                infoUploadPromises.push(
+                    fetch('/webhook/clients-info-upload', {
+                        method: 'POST',
+                        headers: { 'X-RP-Password': password || '' },
+                        body: docData
+                    }).then(async res => {
+                        if (!res.ok) {
+                            const text = await res.text();
+                            if (text.includes('Wrong password')) throw new Error("Mot de passe incorrect pour le webhook PDF.");
+                            throw new Error(`Erreur serveur PDF: ${res.status}`);
+                        }
+                    })
+                );
+            }
+
+            // Wait for all info uploads to finish
+            if (infoUploadPromises.length > 0) {
+                await Promise.all(infoUploadPromises);
+            }
+
+            // If we STILL don't have an ID (e.g. no picture was uploaded, only PDFs for a new client)
+            // The user's flow implied info-upload *could* run first if there are no pictures.
+            // But if picture upload is the ONLY thing determining ID, then creating a new client with ONLY PDF might be an issue.
+            // Assuming the existing logic where info-webhook also handles it, or that we just search by name later.
+
+            // Fetch the newly created/updated client from Supabase
+            // Since we don't have the ID if it's a new client, we query by name.
+            // For a robust system, the webhook should ideally return the ID, 
+            // but we'll try to find the most recent matching client.
+            const { supabase } = await import('../lib/supabase');
+            let updatedClientQuery = supabase
+                .from('clients')
+                .select('*');
+            
+            if (finalClientId) {
+                updatedClientQuery = updatedClientQuery.eq('id', finalClientId);
+            } else {
+                 updatedClientQuery = updatedClientQuery
+                    .eq('nom', nom)
+                    .eq('prenom', prenom)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+            }
+
+            const { data: updatedClients, error } = await updatedClientQuery;
+
+            if (error || !updatedClients || updatedClients.length === 0) {
+                console.warn("Could not fetch the updated client for risks-eval webhook.", error);
+                // Optional fallback, but we should probably still try to notify success of the first step.
+                toast.success('Documents importés. Analyse N8N lancée !', { id: toastId });
+                return;
+            }
+
+            const clientForWebhook = updatedClients[0];
+
+            // Send to risks-eval webhook
+            const risksEvalRes = await fetch('/webhook/clients-risks-eval', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-RP-Password': password || '' 
+                },
+                body: JSON.stringify([clientForWebhook])
+            });
+
+            if (!risksEvalRes.ok) {
+                throw new Error(`Erreur lors de l'évaluation des risques: ${risksEvalRes.status}`);
+            }
+
+            // Update toast to success with a link
+            toast.success(
+                (t) => (
+                    <div className="flex flex-col gap-2">
+                        <span className="font-bold">Analyse terminée pour {prenom} {nom} !</span>
+                        {clientForWebhook.id && (
+                            <Link 
+                                to={`/clients/${clientForWebhook.id}`} 
+                                onClick={() => toast.dismiss(t.id)}
+                                className="text-xs bg-zinc-900 text-white px-3 py-1.5 rounded-lg text-center hover:bg-zinc-800 transition-colors"
+                            >
+                                Voir la fiche client
+                            </Link>
+                        )}
+                    </div>
+                ),
+                { id: toastId, duration: 8000 }
+            );
 
         } catch (err: any) {
             console.error("Upload error:", err);
-            setStatus('error');
-            setErrorMessage(err.message || "Impossible d'envoyer les fichiers. Vérifiez votre connexion.");
+            toast.error(err.message || "Erreur lors de l'envoi des fichiers à N8N.", { id: toastId, duration: 5000 });
         } finally {
             setIsSubmitting(false);
         }
